@@ -31,6 +31,7 @@
 #include <clang/Lex/Lexer.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/ASTMatchers/ASTMatchFinder.h>
+#include <refactoringcontext.h>
 
 #include "documentcache.h"
 #include "utils.h"
@@ -46,8 +47,12 @@ class Renamer : public MatchFinder::MatchCallback
 public:
     Renamer(const std::string &filename, unsigned offset, const std::string &newName,
             Replacements &replacements)
-            : m_filename(filename), m_offset(offset), m_newName(newName),
-              m_replacements(replacements) { }
+        : m_filename(filename)
+          , m_offset(offset)
+          , m_newName(newName)
+          , m_replacements(replacements)
+    {
+    }
 
     virtual void run(MatchFinder::MatchResult const &result) override;
 
@@ -66,30 +71,33 @@ private:
     const VarDecl *m_foundDeclaration = nullptr;
 };
 
-llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
-        clang::tooling::RefactoringTool &clangTool, DocumentCache *documentCache,
-        QUrl const &sourceFile, KTextEditor::Cursor const &position)
-{
-    unsigned offset;
-    auto _offset = toOffset(sourceFile, position, clangTool, documentCache);
-    if (!_offset) {
-        return _offset.getError();
-    }
-    offset = _offset.get();
-    clangDebug() << "Trying to rename VarDecl at offset: " << offset;
 
+RenameVarDeclRefactoring::RenameVarDeclRefactoring(const std::string &fileName, unsigned offset,
+                                                   const std::string &declName, QObject *parent)
+    : Refactoring(parent)
+      , m_fileName(fileName)
+      , m_offset(offset)
+      , m_oldVarDeclName(declName)
+{
+}
+
+llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
+    RefactoringContext *ctx)
+{
+    auto clangTool = ctx->cache->refactoringTool();
+
+    // FIXME: provide old name as default
     const QString newName = QInputDialog::getText(nullptr, i18n("Rename variable"),
                                                   i18n("Type new name of variable"));
     if (newName.isEmpty()) {
         return clangTool.getReplacements();
     }
 
-    clangDebug() << "Will rename to:" << newName;
+    clangDebug() << "Will rename" << m_oldVarDeclName.c_str() << "to:" << newName;
 
     auto matcher = declRefExpr().bind("DeclRef");
 
-    Renamer renamer(sourceFile.toLocalFile().toStdString(), offset, newName.toStdString(),
-                    clangTool.getReplacements());
+    Renamer renamer(m_fileName, m_offset, newName.toStdString(), clangTool.getReplacements());
     MatchFinder finder;
     finder.addMatcher(matcher, &renamer);
 
@@ -121,8 +129,8 @@ void Renamer::run(const MatchFinder::MatchResult &result)
     CharSourceRange range = CharSourceRange::getTokenRange(varDecl->getSourceRange());
     auto begin = result.SourceManager->getDecomposedLoc(range.getBegin());
     auto end = result.SourceManager->getDecomposedLoc(range.getEnd().getLocWithOffset(
-            Lexer::MeasureTokenLength(range.getEnd(), *result.SourceManager,
-                                      result.Context->getLangOpts())));
+        Lexer::MeasureTokenLength(range.getEnd(), *result.SourceManager,
+                                  result.Context->getLangOpts())));
     auto fileEntry = result.SourceManager->getFileEntryForID(begin.first);
     if (!llvm::sys::fs::equivalent(fileEntry->getName(), m_filename)) {
         return;

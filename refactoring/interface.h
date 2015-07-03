@@ -131,28 +131,6 @@ std::vector<std::string> sources(CompilationDatabase db);
 RefactoringsContext createRefactoringsContext(CompilationDatabase db);
 
 /**
- * Returns all applicable refactorings "here"
- *
- * @param rc Initialized refactorings context
- * @param sourceFile queried source file name (full path)
- * @param location offset from beginning of the file to location we are querying
- *
- * @return List of all applicable refactorings "here"
- */
-std::vector<RefactoringKind> allApplicableRefactorings(RefactoringsContext rc,
-                                                       const QUrl &sourceFile,
-                                                       const KTextEditor::Cursor &location);
-
-/**
- * Returns short human readable "name" of a refactoring action.
- * Can be used to populate context-menu...
- *
- * @param refactoring A refactoring kind we are asking for description
- * @return Short human readable description
- */
-QString describeRefactoringKind(RefactoringKind refactoring);
-
-/**
  * Invokes selected refactoring action on selected place in file.
  *
  * @param rc Initialized refactorings context

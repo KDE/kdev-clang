@@ -22,10 +22,17 @@
 #include "refactoringcontext.h"
 
 #include "documentcache.h"
+#include "utils.h"
 
 RefactoringContext::RefactoringContext(
     std::unique_ptr<clang::tooling::CompilationDatabase> database)
     : database(std::move(database))
 {
     cache = new DocumentCache(this);
+}
+
+llvm::ErrorOr<unsigned> RefactoringContext::offset(const std::string &sourceFile,
+                                                   const KTextEditor::Cursor &position) const
+{
+    return toOffset(sourceFile, position, cache->refactoringTool(), cache);
 }

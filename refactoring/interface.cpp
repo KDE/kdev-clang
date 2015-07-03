@@ -87,23 +87,6 @@ RefactoringsContext createRefactoringsContext(CompilationDatabase db)
     return result;
 }
 
-std::vector<RefactoringKind> allApplicableRefactorings(RefactoringsContext rc,
-                                                       const QUrl &sourceFile,
-                                                       const KTextEditor::Cursor &location)
-{
-    // FIXME: implementation
-    return {new NoopRefactoring(), // This refactoring is applicable everywhere
-            new RenameVarDeclRefactoring()
-    };
-    // FIXME: memory leak (returned objects should be owned by some RefactoringsManager)
-    // This is not a place for real implementation
-}
-
-QString describeRefactoringKind(RefactoringKind refactoring)
-{
-    return refactoring->name();
-}
-
 KDevelop::DocumentChangeSet refactorThis(RefactoringsContext rc, RefactoringKind refactoringKind,
                                          const QUrl &sourceFile,
                                          const KTextEditor::Cursor &position)
@@ -113,7 +96,7 @@ KDevelop::DocumentChangeSet refactorThis(RefactoringsContext rc, RefactoringKind
     Q_ASSERT(refactoring);
     // FIXME: introduce RefactoringManager to maintain pool of refactorings and such translations
 
-    auto result = refactoring->invoke(rc->cache->refactoringTool(), rc->cache, sourceFile, position);
+    auto result = refactoring->invoke(rc);
     // TODO: introduce union type for {Location, What}
 
     if (!result) {

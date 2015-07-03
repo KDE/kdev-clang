@@ -36,6 +36,7 @@
 #include <clang/Tooling/Tooling.h>
 #include <language/codegen/documentchangeset.h>
 #include <clang/Tooling/Refactoring.h>
+#include <interfaces/idocument.h>
 
 namespace KDevelop
 {
@@ -61,6 +62,8 @@ public:
     llvm::StringRef contentOfOpenedFile(llvm::StringRef fileName);
 
     clang::tooling::RefactoringTool &refactoringTool();
+
+    clang::tooling::RefactoringTool refactoringToolForFile(const std::string &fileName);
 
 private:
     /// Some modification occurred and we must mark this document as dirty

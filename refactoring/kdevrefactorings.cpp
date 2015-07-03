@@ -41,6 +41,7 @@
 #include "../util/clangdebug.h"
 
 #include "interface.h"
+#include "refactoringmanager.h"
 
 using namespace KDevelop;
 using namespace Refactorings;
@@ -48,6 +49,7 @@ using namespace Refactorings;
 KDevRefactorings::KDevRefactorings(ClangSupport *parent)
         : QObject(parent)
 {
+    m_refactoringManager = new RefactoringManager(this);
     connect(parent->core()->projectController(), &IProjectController::projectOpened,
             this, &KDevRefactorings::projectOpened);
     // handle projects() - alread opened projects
@@ -58,13 +60,17 @@ void KDevRefactorings::fillContextMenu(ContextMenuExtension &extension, Context 
 {
     if (EditorContext *ctx = dynamic_cast<EditorContext *>(context)) {
         // NOTE: I assume ctx->positions() is "here" position
-        auto refactorings = allApplicableRefactorings(m_refactoringsContext, ctx->url(),
-                                                      ctx->position());
+        auto refactorings = m_refactoringManager->allApplicableRefactorings(m_refactoringsContext,
+                                                                            ctx->url(),
+                                                                            ctx->position());
         for (auto refactorAction : refactorings) {
-            QAction *action = new QAction(describeRefactoringKind(refactorAction), this);
+            QAction *action = new QAction(refactorAction->name(), this);
+            refactorAction->setParent(action);  // delete as necessary
             connect(action, &QAction::triggered, [this, refactorAction, ctx]()
             {
-                auto changes = refactorThis(m_refactoringsContext, refactorAction, ctx->url(),
+                // TODO: don't use refactorThis
+                auto changes = refactorThis(m_refactoringsContext, refactorAction,
+                                            ctx->url(),
                                             ctx->position());
                 // FIXME:
                 // use background thread

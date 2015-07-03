@@ -62,8 +62,25 @@ llvm::ErrorOr<KDevelop::DocumentChangeSet> toDocumentChangeSet(
         clang::FileManager &fileManager
 );
 
-llvm::ErrorOr<unsigned> toOffset(const QUrl &sourceFile, const KTextEditor::Cursor &position,
+llvm::ErrorOr<unsigned> toOffset(const std::string &sourceFileName,
+                                 const KTextEditor::Cursor &position,
                                  clang::tooling::ClangTool &clangTool,
                                  DocumentCache *documentCache);
+
+/**
+ * Check if @p location is in range [start;end]
+ */
+bool isInRange(const std::string &fileName, unsigned offset, clang::SourceLocation start,
+               clang::SourceLocation end, const clang::SourceManager &sourceManager);
+
+bool isInRange(const std::string &fileName, unsigned offset, clang::SourceRange range,
+               const clang::SourceManager &sourceManager);
+
+clang::SourceRange tokenRangeToCharRange(clang::SourceRange range,
+                                         const clang::SourceManager &sourceManager,
+                                         const clang::LangOptions &langOptions);
+
+clang::SourceRange tokenRangeToCharRange(clang::SourceRange range,
+                                         const clang::CompilerInstance &CI);
 
 #endif //KDEV_CLANG_UTILS_H

@@ -20,3 +20,8 @@
 */
 
 #include "refactoring.h"
+
+Refactoring::Refactoring(QObject *parent)
+    : QObject(parent)
+{
+}

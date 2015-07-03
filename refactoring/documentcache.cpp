@@ -62,6 +62,27 @@ clang::tooling::RefactoringTool &DocumentCache::refactoringTool()
     return *m_refactoringTool.get();
 }
 
+clang::tooling::RefactoringTool DocumentCache::refactoringToolForFile(
+    const std::string &fileName)
+{
+    // try to prepare RefactoringTool just for @p fileName
+    // if we don't have compile command for this file (e.g. it is a header file) then return
+    // general version
+    const auto ctx = static_cast<RefactoringContext *>(parent());
+    const auto &files = ctx->database->getAllFiles();
+    if (std::find_if(files.begin(), files.end(),
+                     [&fileName](const std::string &file)
+                     {
+                         return llvm::sys::fs::equivalent(file, fileName);
+                     }) != files.end()) {
+        auto result = clang::tooling::RefactoringTool(*ctx->database, {fileName});
+        result.mapVirtualFile(fileName, contentOfOpenedFile(fileName));
+        return result;
+    } else {
+        return refactoringTool();   // a copy of
+    }
+}
+
 void DocumentCache::handleDocumentModified(KDevelop::IDocument *document)
 {
     m_dirty = true;

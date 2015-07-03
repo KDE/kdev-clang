@@ -31,11 +31,16 @@
  */
 class RefactoringInfo
 {
+    // this class can be used as factory for Refactoring (RefactoringManager would return
+    // list of RefactoringInfo which would be used to create Refactoring)
 public:
     virtual ~RefactoringInfo();
 
     /**
-     * Human readable name of refactoring action
+     * Returns short human readable "name" of a refactoring action.
+     * Can be used to populate context-menu...
+     *
+     * @return Short human readable description
      */
     virtual QString name() const = 0;
 

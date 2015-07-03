@@ -25,10 +25,13 @@
 #include <QString>
 
 // Clang
+#include <clang/Lex/Lexer.h>
+#include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Refactoring.h>
 
 #include "util/clangdebug.h"
 
+using namespace clang;
 using namespace clang::tooling;
 using namespace KDevelop;
 
@@ -125,7 +128,7 @@ static KTextEditor::Range toRange(StringRef text, unsigned offset, unsigned leng
 
 /// Decides if file should be taken from cache or file system and takes it
 static ErrorOr<StringRef> readFileContent(StringRef name, DocumentCache *cache,
-                                          clang::FileManager &fileManager)
+                                          FileManager &fileManager)
 {
     if (cache->fileIsOpened(name)) {
         // It would be great if we could get rid of this use of cache
@@ -141,7 +144,7 @@ static ErrorOr<StringRef> readFileContent(StringRef name, DocumentCache *cache,
 
 static ErrorOr<DocumentChange> toDocumentChange(const Replacement &replacement,
                                                 DocumentCache *cache,
-                                                clang::FileManager &fileManager)
+                                                FileManager &fileManager)
 {
     // (Clang) FileManager is unaware of cache (from ClangTool) (cache is applied just before run)
     // SourceManager enumerates columns counting from 1 (probably also lines)
@@ -176,9 +179,9 @@ static ErrorOr<DocumentChange> toDocumentChange(const Replacement &replacement,
     return result;
 }
 
-ErrorOr<DocumentChangeSet> toDocumentChangeSet(const clang::tooling::Replacements &replacements,
+ErrorOr<DocumentChangeSet> toDocumentChangeSet(const Replacements &replacements,
                                                DocumentCache *cache,
-                                               clang::FileManager &fileManager)
+                                               FileManager &fileManager)
 {
     // NOTE: DocumentChangeSet can handle file renaming, libTooling will not do that, but it may be
     // reasonable in some cases (renaming of a class, ...). This feature may be used outside to
@@ -210,11 +213,10 @@ static char toChar(EndOfLine eol)
     return '\0';
 }
 
-ErrorOr<unsigned> toOffset(const QUrl &sourceFile, const KTextEditor::Cursor &position,
-                           clang::tooling::ClangTool &clangTool,
+ErrorOr<unsigned> toOffset(const std::string &fileName, const KTextEditor::Cursor &position,
+                           ClangTool &clangTool,
                            DocumentCache *documentCache)
 {
-    std::string fileName = sourceFile.toLocalFile().toStdString();
     auto fileContent = readFileContent(fileName, documentCache, clangTool.getFiles());
     if (!fileContent) {
         return fileContent.getError();
@@ -233,6 +235,7 @@ ErrorOr<unsigned> toOffset(const QUrl &sourceFile, const KTextEditor::Cursor &po
     }
     int currentColumn = 0;
     while (currentColumn < position.column()) {
+        // FIXME: cursor after last character crashes
         Q_ASSERT(i != fileContent.get().end());
         i++;
         currentColumn++;
@@ -240,3 +243,39 @@ ErrorOr<unsigned> toOffset(const QUrl &sourceFile, const KTextEditor::Cursor &po
     }
     return currentOffset;
 }
+
+bool isInRange(const std::string &fileName, unsigned offset, SourceLocation start,
+               SourceLocation end, const SourceManager &sourceManager)
+{
+    auto startD = sourceManager.getDecomposedLoc(start);
+    auto endD = sourceManager.getDecomposedLoc(end);
+    auto fileEntry = sourceManager.getFileEntryForID(startD.first);
+    if (fileEntry == nullptr) {
+        return false;
+    }
+    if (!llvm::sys::fs::equivalent(fileEntry->getName(), fileName)) {
+        return false;
+    }
+    return startD.second <= offset && offset <= endD.second;
+}
+
+bool isInRange(const std::string &fileName, unsigned offset, SourceRange range,
+               const SourceManager &sourceManager)
+{
+    return isInRange(fileName, offset, range.getBegin(), range.getEnd(), sourceManager);
+}
+
+SourceRange tokenRangeToCharRange(SourceRange range, const SourceManager &sourceManager,
+                                  const LangOptions &langOptions)
+{
+    SourceRange result(range.getBegin(), range.getEnd().getLocWithOffset(
+            Lexer::MeasureTokenLength(range.getEnd(), sourceManager, langOptions)));
+    return result;
+}
+
+SourceRange tokenRangeToCharRange(SourceRange range,
+                                  const CompilerInstance &CI)
+{
+    return tokenRangeToCharRange(range, CI.getSourceManager(), CI.getLangOpts());
+}
+

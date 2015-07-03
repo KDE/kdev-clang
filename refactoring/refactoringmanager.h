@@ -19,43 +19,39 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_REFACTORINGCONTEXT_H
-#define KDEV_CLANG_REFACTORINGCONTEXT_H
+#ifndef KDEV_CLANG_REFACTORINGMANAGER_H
+#define KDEV_CLANG_REFACTORINGMANAGER_H
 
 // base class
 #include <QObject>
 
-// KF5
-#include <KTextEditor/ktexteditor/cursor.h>
+// C++
+#include <vector>
+#include <memory>
 
-// LLVM
-#include <llvm/Support/ErrorOr.h>
+#include "refactoring.h"
 
-// Clang
-#include <clang/Tooling/CompilationDatabase.h>
-
-namespace KDevelop
-{
-class IDocumentController;
-};
-
-class DocumentCache;
-
-// TODO: join with DocumentCache, handle CompilationDatabase here
-class RefactoringContext : public QObject
+class RefactoringManager : public QObject
 {
     Q_OBJECT;
-    Q_DISABLE_COPY(RefactoringContext);
-
+    Q_DISABLE_COPY(RefactoringManager);
 public:
-    RefactoringContext(std::unique_ptr<clang::tooling::CompilationDatabase> database);
+    RefactoringManager(QObject *parent);
 
-    llvm::ErrorOr<unsigned> offset(const std::string &sourceFile,
-                                   const KTextEditor::Cursor &position) const;
-
-    std::unique_ptr<clang::tooling::CompilationDatabase> database;
-    DocumentCache *cache;
+    /**
+     * Returns all applicable refactorings "here"
+     *
+     * @param rc Initialized refactorings context
+     * @param sourceFile queried source file name (full path)
+     * @param location offset from beginning of the file to location we are querying
+     *
+     * @return List of all applicable refactorings "here"
+     */
+    std::vector<Refactoring *> allApplicableRefactorings(RefactoringContext *ctx,
+                                                         const QUrl &sourceFile,
+                                                         const KTextEditor::Cursor &location);
+    // or make RefactoringContext* property
 };
 
 
-#endif //KDEV_CLANG_REFACTORINGCONTEXT_H
+#endif //KDEV_CLANG_REFACTORINGMANAGER_H

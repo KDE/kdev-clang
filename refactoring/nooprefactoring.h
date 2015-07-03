@@ -35,9 +35,7 @@ class NoopRefactoring : public Refactoring
 public:
     virtual QString name() const override;
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(
-            clang::tooling::RefactoringTool &clangTool, DocumentCache *documentCache,
-            const QUrl &sourceFile, const KTextEditor::Cursor &position) override;
+    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
 };
 
 

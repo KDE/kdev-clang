@@ -37,6 +37,7 @@
 #include "interface.h"
 
 class ClangSupport;
+class RefactoringManager;
 
 /**
  * Glue between KDevelop (QObject based) interfaces and refactorings (interface)
@@ -64,6 +65,7 @@ private: // (slots)
 
 private:
     Refactorings::RefactoringsContext m_refactoringsContext = nullptr;
+    RefactoringManager *m_refactoringManager;
 };
 
 #endif //BUILD_REFACTORINGS

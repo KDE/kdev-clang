@@ -9,6 +9,7 @@ set(SRCS
     kdevrefactorings.cpp
     renamevardeclrefactoring.cpp
     refactoringcontext.cpp
+    refactoringmanager.cpp
 )
 
 add_library(kdevclangrefactor STATIC

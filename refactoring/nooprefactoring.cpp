@@ -30,15 +30,9 @@ QString NoopRefactoring::name() const
     return QStringLiteral("do nothing");
 }
 
-llvm::ErrorOr<clang::tooling::Replacements> NoopRefactoring::invoke(
-        clang::tooling::RefactoringTool &clangTool, DocumentCache *documentCache,
-        const QUrl &sourceFile,
-        const KTextEditor::Cursor &position)
+llvm::ErrorOr<clang::tooling::Replacements> NoopRefactoring::invoke(RefactoringContext *ctx)
 {
-    Q_UNUSED(clangTool);
-    Q_UNUSED(documentCache);
-    Q_UNUSED(sourceFile);
-    Q_UNUSED(position);
+    Q_UNUSED(ctx);
     clangDebug() << "Did nothing (dummy refactoring action)";
     return clang::tooling::Replacements();
 }

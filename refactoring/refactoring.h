@@ -25,6 +25,7 @@
 #include "refactoringinfo.h"
 
 // Qt
+#include <QObject>
 #include <QUrl>
 
 // KF5
@@ -42,13 +43,15 @@ class DocumentCache;
 /**
  * Wraps interface of single refactoring action. Objects will be used to perform refactoring action
  */
-class Refactoring : public RefactoringInfo
+class Refactoring : public QObject, public RefactoringInfo
 {
+    Q_OBJECT;
+    Q_DISABLE_COPY(Refactoring);
     // TODO: interface as needed
 public:
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(
-            clang::tooling::RefactoringTool &clangTool, DocumentCache *documentCache,
-            const QUrl &sourceFile, const KTextEditor::Cursor &position) = 0;
+    Refactoring(QObject *parent);
+
+    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) = 0;
     // TODO: {Location,What} union
 };
 
