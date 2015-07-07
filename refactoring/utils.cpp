@@ -29,7 +29,9 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Refactoring.h>
 
-#include "util/clangdebug.h"
+#include "redeclarationchain.h"
+#include "declarationsymbol.h"
+#include "debug.h"
 
 using namespace clang;
 using namespace clang::tooling;
@@ -97,7 +99,7 @@ static KTextEditor::Range toRange(StringRef text, unsigned offset, unsigned leng
     // LF always ends line
     // Shift cursor in text assuming cursor is in @p offset and eating @p length chars
     auto shift = [&text, &lastLine, &lastColumn, eolMarker]
-            (unsigned start, unsigned length)
+        (unsigned start, unsigned length)
     {
         for (unsigned i = start; i < start + length && i < text.size(); ++i) {
             switch (text[i]) {
@@ -160,20 +162,20 @@ static ErrorOr<DocumentChange> toDocumentChange(const Replacement &replacement,
         return fileContent.getError();
     }
     auto result = DocumentChange(
-            IndexedString(
-                    replacement.getFilePath().data(),
-                    static_cast<unsigned short>(
-                            replacement.getFilePath().size()
-                    )
-            ),
-            toRange(
-                    fileContent.get(),
-                    replacement.getOffset(),
-                    replacement.getLength()
-            ),
-            QString(), // we don't have this data
-            QString::fromStdString(replacement.getReplacementText())
-            // NOTE: above conversion assumes UTF-8 encoding
+        IndexedString(
+            replacement.getFilePath().data(),
+            static_cast<unsigned short>(
+                replacement.getFilePath().size()
+            )
+        ),
+        toRange(
+            fileContent.get(),
+            replacement.getOffset(),
+            replacement.getLength()
+        ),
+        QString(), // we don't have this data
+        QString::fromStdString(replacement.getReplacementText())
+        // NOTE: above conversion assumes UTF-8 encoding
     );
     result.m_ignoreOldText = true;
     return result;
@@ -269,7 +271,7 @@ SourceRange tokenRangeToCharRange(SourceRange range, const SourceManager &source
                                   const LangOptions &langOptions)
 {
     SourceRange result(range.getBegin(), range.getEnd().getLocWithOffset(
-            Lexer::MeasureTokenLength(range.getEnd(), sourceManager, langOptions)));
+        Lexer::MeasureTokenLength(range.getEnd(), sourceManager, langOptions)));
     return result;
 }
 
@@ -293,3 +295,36 @@ bool isLocationEqual(const std::string &fileName, unsigned offset, clang::Source
     return locationD.second == offset;
 }
 
+bool operator==(const LexicalLocation &lhs, const LexicalLocation &rhs)
+{
+    return (lhs.offset == rhs.offset) && (lhs.fileName == rhs.fileName);
+}
+
+LexicalLocation lexicalLocation(const Decl *decl)
+{
+    const auto &srcMgr = decl->getASTContext().getSourceManager();
+    auto location = srcMgr.getDecomposedLoc(decl->getLocStart());
+    auto fileEntry = srcMgr.getFileEntryForID(location.first);
+    if (fileEntry == nullptr) {
+        return {"", location.second};
+    }
+    else {
+        return {fileEntry->getName(), location.second};
+    }
+}
+
+// It is terribly inconvenient. Clang AST can be used to reason about declarations _within_one_TU_
+// but its not difficult task to make set of translation units with code referring to the same
+// entity (object, function, ...) but without _any_ connection in Clang AST. Compiler works on TUs,
+// we are working here on the whole project. That's difference. Clang can provide us little help
+// here
+std::unique_ptr<DeclarationComparator> declarationComparator(const Decl *decl)
+{
+    if (const NamedDecl *namedDecl = llvm::dyn_cast<NamedDecl>(decl)) {
+        auto linkage = namedDecl->getLinkageInternal();
+        if (linkage == ExternalLinkage) {
+            return cpp::make_unique<DeclarationSymbol>(namedDecl);
+        }
+    }
+    return cpp::make_unique<RedeclarationChain>(decl);
+}

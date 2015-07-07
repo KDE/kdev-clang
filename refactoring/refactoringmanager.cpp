@@ -33,6 +33,7 @@
 #include "renamevardeclrefactoring.h"
 #include "renamefielddeclrefactoring.h"
 #include "renamefielddeclturefactoring.h"
+#include "declarationcomparator.h"
 #include "debug.h"
 
 using namespace std;
@@ -63,6 +64,10 @@ public:
 
     bool VisitMemberExpr(MemberExpr *memberExpr);
 
+    bool VisitFunctionDecl(FunctionDecl *functionDecl);
+
+    // TODO: unify renaming refactorings - they have _very_ similar implementation
+
 private:
     bool isInRange(SourceRange range) const;
 
@@ -77,6 +82,8 @@ private:
     Refactoring *refactoringForVarDecl(const VarDecl *varDecl) const;
 
     Refactoring *refactoringForFieldDecl(const FieldDecl *fieldDecl) const;
+
+    Refactoring *refactoringForFunctionDecl(const FunctionDecl *functionDecl) const;
 
     /// Request ClangTool to stop after this translation unit
     void done();
@@ -244,20 +251,8 @@ void ExplorerRecursiveASTVisitor::addRefactoring(Refactoring *refactoring)
 
 Refactoring *ExplorerRecursiveASTVisitor::refactoringForVarDecl(const VarDecl *varDecl) const
 {
-    auto canonicalDecl = varDecl->getCanonicalDecl();
-    // what is VisibleNoLinkage ?
-    Q_ASSERT(canonicalDecl->getLinkageInternal() != VisibleNoLinkage);
-    std::string qualName;
-    if (canonicalDecl->getLinkageInternal() == ExternalLinkage) {
-        qualName = canonicalDecl->getQualifiedNameAsString();
-        refactorDebug() << "Renaming variable with external linkage - using" << qualName <<
-                        "as qualified name";
-    }
-
-    auto file = fileName(canonicalDecl);
-    auto offset = fileOffset(canonicalDecl);
-    auto name = canonicalDecl->getName().str();
-    return new RenameVarDeclRefactoring(file, offset, name, std::move(qualName));
+    auto name = varDecl->getName().str();
+    return new RenameVarDeclRefactoring(declarationComparator(varDecl), name);
 }
 
 bool ExplorerRecursiveASTVisitor::VisitDeclRefExpr(DeclRefExpr *declRefExpr)
@@ -299,7 +294,7 @@ Refactoring *ExplorerRecursiveASTVisitor::refactoringForFieldDecl(const FieldDec
         return new RenameFieldDeclRefactoring(name, std::move(qualName));
     } else {
         // Rename based on canonical declaration location
-        refactorDebug() << "Raneming TU field" << canonicalDecl->getName();
+        refactorDebug() << "Renaming TU field" << canonicalDecl->getName();
         return new RenameFieldDeclTURefactoring(fileName(canonicalDecl), fileOffset(canonicalDecl),
                                                 canonicalDecl->getName());
     }
@@ -329,3 +324,36 @@ bool ExplorerRecursiveASTVisitor::VisitMemberExpr(MemberExpr *memberExpr)
     }
     return true;
 }
+
+#if 0   // Provide change signature instead
+Refactoring *ExplorerRecursiveASTVisitor::refactoringForFunctionDecl(const FunctionDecl *functionDecl) const
+{
+    auto canonicalDecl = functionDecl->getCanonicalDecl();
+    // what is VisibleNoLinkage ?
+    Q_ASSERT(canonicalDecl->getLinkageInternal() != VisibleNoLinkage);
+    std::string qualName;
+    if (canonicalDecl->getLinkageInternal() == ExternalLinkage) {
+        qualName = canonicalDecl->getQualifiedNameAsString();
+        refactorDebug() << "Renaming function with external linkage using" << qualName <<
+                        "as qualified name";
+    }
+
+    auto file = fileName(canonicalDecl);
+    auto offset = fileOffset(canonicalDecl);
+    auto name = canonicalDecl->getName().str();
+    return new RenameFunctionDeclRefactoring(file, offset, name, std::move(qualName));
+}
+#endif
+
+bool ExplorerRecursiveASTVisitor::VisitFunctionDecl(FunctionDecl *functionDecl)
+{
+    if(isInRange(functionDecl->getLocation()))
+    {
+        done();
+        //addRefactoring(refactoringForFunctionDecl(functionDecl));
+        // other options here...
+    }
+
+    return true;
+}
+

@@ -19,38 +19,33 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_RENAMEVARDECLREFACTORING_H
-#define KDEV_CLANG_RENAMEVARDECLREFACTORING_H
+#ifndef KDEV_CLANG_REDECLARATIONCHAIN_H
+#define KDEV_CLANG_REDECLARATIONCHAIN_H
+
+// C++
+#include <unordered_set>
 
 // Clang
-#include <clang/Tooling/Refactoring.h>
+#include <clang/AST/Redeclarable.h>
 
-#include "refactoring.h"
 #include "declarationcomparator.h"
-
-class DocumentCache;
+#include "utils.h"
 
 /**
- * This class handles renaming of VerDecl AST node.
+ * Contains chain of (re)declarations of some declaration and checks if two declarations can
+ * refer to the same lexical declaration
  */
-class RenameVarDeclRefactoring : public Refactoring
+class RedeclarationChain : public DeclarationComparator
 {
-    // Consider splitting this into two refactorings: one for local (single TU) transformations,
-    // one for global (symbols with external linkage) transformations
-    Q_OBJECT;
-    Q_DISABLE_COPY(RenameVarDeclRefactoring);
 public:
-    RenameVarDeclRefactoring(std::unique_ptr<DeclarationComparator> declComparator,
-                             const std::string &declName, QObject *parent = nullptr);
+    RedeclarationChain(const clang::Decl *decl);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+    virtual bool equivalentTo(const clang::Decl *decl) const override;
 
-    virtual QString name() const override;
+    bool intersects(const RedeclarationChain &other) const;
 
 private:
-    const std::unique_ptr<DeclarationComparator> m_declComparator;
-    const std::string m_oldVarDeclName;
+    std::unordered_set<LexicalLocation> m_declarationsLocations;
 };
 
-
-#endif //KDEV_CLANG_RENAMEVARDECLREFACTORING_H
+#endif //KDEV_CLANG_REDECLARATIONCHAIN_H

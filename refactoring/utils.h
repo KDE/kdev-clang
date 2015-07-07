@@ -34,10 +34,12 @@
 
 // KDevelop
 #include <language/codegen/documentchangeset.h>
-#include <clang/Tooling/Refactoring.h>
+#include <language/util/kdevhash.h>
 
 // refactoring
 #include "documentcache.h"
+
+class DeclarationComparator;
 
 namespace cpp
 {
@@ -50,16 +52,16 @@ inline std::unique_ptr<T> make_unique(Args &&... args)
 };
 
 std::unique_ptr<clang::tooling::CompilationDatabase> makeCompilationDatabaseFromCMake(
-        const std::string &buildPath, QString &errorMessage);
+    const std::string &buildPath, QString &errorMessage);
 
 std::unique_ptr<clang::tooling::RefactoringTool> makeRefactoringTool(
-        const clang::tooling::CompilationDatabase &database,
-        const std::vector<std::string> &sources);
+    const clang::tooling::CompilationDatabase &database,
+    const std::vector<std::string> &sources);
 
 llvm::ErrorOr<KDevelop::DocumentChangeSet> toDocumentChangeSet(
-        const clang::tooling::Replacements &replacements,
-        DocumentCache *cache,
-        clang::FileManager &fileManager
+    const clang::tooling::Replacements &replacements,
+    DocumentCache *cache,
+    clang::FileManager &fileManager
 );
 
 llvm::ErrorOr<unsigned> toOffset(const std::string &sourceFileName,
@@ -86,5 +88,78 @@ clang::SourceRange tokenRangeToCharRange(clang::SourceRange range,
 // NOTE: @p offset must be equal to location offset
 bool isLocationEqual(const std::string &fileName, unsigned offset, clang::SourceLocation location,
                      const clang::SourceManager &sourceManager);
+
+/* comparison of declarations within translation unit
+ * - chain of redeclarations (their locations)
+ * - if two chains intersects - the same entity (declarator)
+ */
+
+/* comparison of declarations with external linkage (global)
+ * - like name mangling (templates!!!)
+ * - namespaces (also anonymous)
+ * - classes (RecordDecl) (also anonymous)
+ * - function (full signature)
+ * - types (canonical, as function parameters)
+ * - templates (classes, functions)
+ * - specializations
+ */
+
+/* how to compare:
+ * within translation unit:
+ * - create chain of locations and for each declaration from each translation unit check if it
+ *   intersects (maybe optimize - cache from canonical declaration to chain and cache checked
+ *   canonical declarations)
+ * global (external non-unique linkage):
+ * - generate identifier of selected (canonical?) declaration
+ * - compare identifiers
+ */
+
+/* anonymous namespaces
+ * - in header file - used in many translation units
+ *   - separate entities, but lexicaly the same location and the same usages
+ */
+
+/* external linkage requires global view
+ * the rest (entities) are visible only in translation unit
+ *   but may be lexicaly used in many translation units (header files)
+ */
+
+/* ALGO:
+ * 0. generate chain (non external) or identifier (external linkage)
+ * We have TU:
+ * 1. visit all declarations (usages included)
+ * 1.1. check correspondence with chain (or identifier)
+ */
+
+// TU dispatcher - keeps chain/identifier and cache of seen declarations (canonical)
+
+/**
+ * Stable information about location of (begin of) some token
+ */
+struct LexicalLocation
+{
+    std::string fileName;
+    unsigned offset;
+};
+
+bool operator==(const LexicalLocation &lhs, const LexicalLocation &rhs);
+
+namespace std
+{
+template<>
+struct hash<LexicalLocation>
+{
+    size_t operator()(const LexicalLocation &o) const
+    {
+        auto h1 = hash<string>()(o.fileName);
+        auto h2 = hash<unsigned>()(o.offset);
+        return KDevHash() << h1 << h2;
+    }
+};
+}
+
+LexicalLocation lexicalLocation(const clang::Decl *decl);
+
+std::unique_ptr<DeclarationComparator> declarationComparator(const clang::Decl *decl);
 
 #endif //KDEV_CLANG_UTILS_H

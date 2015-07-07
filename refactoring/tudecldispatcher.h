@@ -19,18 +19,33 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+#ifndef KDEV_CLANG_TUDECLDISPATCHER_H
+#define KDEV_CLANG_TUDECLDISPATCHER_H
 
-#include <QtCore/QLoggingCategory>
+// C++
+#include <memory>
+#include <unordered_map>
 
-#include <llvm/ADT/StringRef.h>
+// Clang
+#include <clang/AST/DeclBase.h>
 
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
 
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
+class DeclarationComparator;
 
-#endif //KDEV_CLANG_DEBUG_H
+/**
+ * Helps in making decision if given declarations are syntactically equivalent
+ */
+class TUDeclDispatcher
+{
+public:
+    TUDeclDispatcher(const DeclarationComparator *declComparator);
+
+    bool equivalent(const clang::Decl *decl) const;
+
+private:
+    const DeclarationComparator *m_declComparator;
+    mutable std::unordered_map<const clang::Decl *, bool> m_cache;
+};
+
+
+#endif //KDEV_CLANG_TUDECLDISPATCHER_H

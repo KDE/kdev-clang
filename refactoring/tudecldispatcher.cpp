@@ -19,18 +19,25 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+// Clang
+#include <clang/AST/Decl.h>
 
-#include <QtCore/QLoggingCategory>
+#include "tudecldispatcher.h"
+#include "declarationcomparator.h"
+#include "utils.h"
 
-#include <llvm/ADT/StringRef.h>
+TUDeclDispatcher::TUDeclDispatcher(const DeclarationComparator *declComparator)
+    : m_declComparator(declComparator) { }
 
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
-
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
-
-#endif //KDEV_CLANG_DEBUG_H
+bool TUDeclDispatcher::equivalent(const clang::Decl *decl) const
+{
+    decl = decl->getCanonicalDecl();
+    auto i = m_cache.find(decl);
+    if (i != m_cache.end()) {
+        return i->second;
+    } else {
+        bool result = m_declComparator->equivalentTo(decl);
+        m_cache[decl] = result;
+        return result;
+    }
+}

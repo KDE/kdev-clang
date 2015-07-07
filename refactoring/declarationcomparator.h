@@ -19,18 +19,22 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+#ifndef KDEV_CLANG_DECLARATIONCOMPARATOR_H
+#define KDEV_CLANG_DECLARATIONCOMPARATOR_H
 
-#include <QtCore/QLoggingCategory>
+// Clang
+#include <clang/AST/DeclBase.h>
 
-#include <llvm/ADT/StringRef.h>
+/**
+ * Can compare declarations of any kind
+ */
+class DeclarationComparator
+{
+public:
+    virtual ~DeclarationComparator();
 
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
+    virtual bool equivalentTo(const clang::Decl *decl) const = 0;
+};
 
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
 
-#endif //KDEV_CLANG_DEBUG_H
+#endif //KDEV_CLANG_DECLARATIONCOMPARATOR_H

@@ -13,6 +13,10 @@ set(SRCS
     debug.cpp
     renamefielddeclrefactoring.cpp
     renamefielddeclturefactoring.cpp
+    redeclarationchain.cpp
+    declarationcomparator.cpp
+    tudecldispatcher.cpp
+    declarationsymbol.cpp
 )
 
 add_library(kdevclangrefactor STATIC

@@ -19,38 +19,44 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_RENAMEVARDECLREFACTORING_H
-#define KDEV_CLANG_RENAMEVARDECLREFACTORING_H
+#ifndef KDEV_CLANG_DECLARATIONSYMBOL_H
+#define KDEV_CLANG_DECLARATIONSYMBOL_H
+
+// C++
+#include <vector>
+
+// Qt
+#include <QtGlobal>
 
 // Clang
-#include <clang/Tooling/Refactoring.h>
+#include <clang/AST/DeclBase.h>
 
-#include "refactoring.h"
 #include "declarationcomparator.h"
 
-class DocumentCache;
+class SymbolPart;
 
 /**
- * This class handles renaming of VerDecl AST node.
+ * Contains syntactic symbol declaration. Designed to operate on symbols with External Linkage.
+ * Can be used everywhere (for all kinds of symbols, not only external), but is slow and its
+ * behavior depends on rewrite of scoping and redeclaration rules.
+ *
+ * Try to keep in sync with C++ std
  */
-class RenameVarDeclRefactoring : public Refactoring
+class DeclarationSymbol : public DeclarationComparator
 {
-    // Consider splitting this into two refactorings: one for local (single TU) transformations,
-    // one for global (symbols with external linkage) transformations
-    Q_OBJECT;
-    Q_DISABLE_COPY(RenameVarDeclRefactoring);
+    Q_DISABLE_COPY(DeclarationSymbol);
 public:
-    RenameVarDeclRefactoring(std::unique_ptr<DeclarationComparator> declComparator,
-                             const std::string &declName, QObject *parent = nullptr);
+    // But for now only named decls can be marshalled this way
+    // (external linkage of symbol without a name? no way, i guess)
+    DeclarationSymbol(const clang::NamedDecl *decl);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+    ~DeclarationSymbol();
 
-    virtual QString name() const override;
+    virtual bool equivalentTo(const clang::Decl *decl) const override;
 
 private:
-    const std::unique_ptr<DeclarationComparator> m_declComparator;
-    const std::string m_oldVarDeclName;
+    std::vector<std::unique_ptr<SymbolPart>> m_parts;
 };
 
 
-#endif //KDEV_CLANG_RENAMEVARDECLREFACTORING_H
+#endif //KDEV_CLANG_DECLARATIONSYMBOL_H

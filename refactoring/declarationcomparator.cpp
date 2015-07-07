@@ -19,18 +19,6 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+#include "declarationcomparator.h"
 
-#include <QtCore/QLoggingCategory>
-
-#include <llvm/ADT/StringRef.h>
-
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
-
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
-
-#endif //KDEV_CLANG_DEBUG_H
+DeclarationComparator::~DeclarationComparator() = default;
