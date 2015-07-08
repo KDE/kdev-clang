@@ -19,19 +19,28 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+#ifndef KDEV_CLANG_CHANGESIGNATUREREFACTORING_CHANGEPACK_H
+#define KDEV_CLANG_CHANGESIGNATUREREFACTORING_CHANGEPACK_H
 
-#include <QtCore/QLoggingCategory>
+// C++
+#include <vector>
 
-#include <llvm/ADT/StringRef.h>
+#include "changesignaturerefactoring.h"
 
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
-#define refactorCritical() qCCritical(KDEV_CLANG_REFACTORING)
+// This form of changeset preserves source information where possible
+class ChangeSignatureRefactoring::ChangePack
+{
+public:
+    ChangePack(const InfoPack *infoPack);
 
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
+    // non-negative value - param from InfoPack at given position
+    // nagative value - param from m_newParam at (-v)-1 position
+    std::vector<int> m_paramRefs;
+    std::vector<std::tuple<std::string, std::string>> m_newParam;
+    // These are empty if not changed
+    std::string m_newResult;
+    std::string m_newName;
+};
 
-#endif //KDEV_CLANG_DEBUG_H
+
+#endif //KDEV_CLANG_CHANGESIGNATUREREFACTORING_CHANGEPACK_H

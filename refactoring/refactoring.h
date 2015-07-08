@@ -53,6 +53,9 @@ public:
 
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) = 0;
     // TODO: {Location,What} union
+
+protected:
+    static llvm::ErrorOr<clang::tooling::Replacements> cancelledResult();  // Returned on cancel
 };
 
 

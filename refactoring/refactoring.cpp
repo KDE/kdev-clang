@@ -19,9 +19,16 @@
     Boston, MA 02110-1301, USA.
 */
 
+#include <clang/Tooling/Core/Replacement.h>
+
 #include "refactoring.h"
 
 Refactoring::Refactoring(QObject *parent)
     : QObject(parent)
 {
+}
+
+llvm::ErrorOr<clang::tooling::Replacements> Refactoring::cancelledResult()
+{
+    return clang::tooling::Replacements{};
 }

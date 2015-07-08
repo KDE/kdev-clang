@@ -1,4 +1,6 @@
 
+set(CMAKE_AUTOUIC ON)
+
 set(SRCS
     interface.cpp
     utils.cpp
@@ -17,6 +19,10 @@ set(SRCS
     declarationcomparator.cpp
     tudecldispatcher.cpp
     declarationsymbol.cpp
+    changesignaturedialog.cpp
+    changesignaturerefactoring.cpp
+    changesignaturerefactoringinfopack.cpp
+    changesignaturerefactoringchangepack.cpp
 )
 
 add_library(kdevclangrefactor STATIC

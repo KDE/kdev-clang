@@ -162,4 +162,26 @@ LexicalLocation lexicalLocation(const clang::Decl *decl);
 
 std::unique_ptr<DeclarationComparator> declarationComparator(const clang::Decl *decl);
 
+int getTokenRangeSize(const clang::SourceRange &range, const clang::SourceManager &sourceManager,
+                      const clang::LangOptions &langOpts);
+
+std::string textFromTokenRange(clang::SourceRange range, const clang::SourceManager &sourceManager,
+                               const clang::LangOptions &langOpts);
+
+// Clang provides absolute no support for moving code...
+template<class Node>
+std::string codeFromASTNode(const Node *node, const clang::SourceManager &sourceManager,
+                            const clang::LangOptions &langOpts);
+
+// AST locations discovery tool...
+void dumpTokenRange(clang::SourceRange range, const clang::SourceManager &sourceManager,
+                    const clang::LangOptions &langOpts);
+
+template<class Node>
+std::string codeFromASTNode(const Node *node, const clang::SourceManager &sourceManager,
+                            const clang::LangOptions &langOpts)
+{
+    return textFromTokenRange(node->getSourceRange(), sourceManager, langOpts);
+}
+
 #endif //KDEV_CLANG_UTILS_H

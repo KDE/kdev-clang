@@ -19,19 +19,16 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+#include "changesignaturerefactoringchangepack.h"
+#include "changesignaturerefactoringinfopack.h"
 
-#include <QtCore/QLoggingCategory>
-
-#include <llvm/ADT/StringRef.h>
-
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
-#define refactorCritical() qCCritical(KDEV_CLANG_REFACTORING)
-
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
-
-#endif //KDEV_CLANG_DEBUG_H
+ChangeSignatureRefactoring::ChangePack::ChangePack(
+    const ChangeSignatureRefactoring::InfoPack *infoPack)
+    : m_paramRefs(infoPack->parameters().size())
+{
+    Q_ASSERT(m_paramRefs.size() <= std::numeric_limits<int>::max());
+    // initialize identity
+    for (int i = 0, s = static_cast<int>(m_paramRefs.size()); i < s; ++i) {
+        m_paramRefs[i] = i;
+    }
+}

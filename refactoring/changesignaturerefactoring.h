@@ -19,19 +19,34 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+#ifndef KDEV_CLANG_CHANGESIGNATUREREFACTORING_H
+#define KDEV_CLANG_CHANGESIGNATUREREFACTORING_H
 
-#include <QtCore/QLoggingCategory>
+// Clang
+#include <clang/AST/DeclBase.h>
 
-#include <llvm/ADT/StringRef.h>
+#include "refactoring.h"
 
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
-#define refactorCritical() qCCritical(KDEV_CLANG_REFACTORING)
+class ChangeSignatureRefactoring : public Refactoring
+{
+    Q_OBJECT;
+    Q_DISABLE_COPY(ChangeSignatureRefactoring);
 
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
+public:
+    class InfoPack;
+    class ChangePack;
 
-#endif //KDEV_CLANG_DEBUG_H
+    ChangeSignatureRefactoring(const clang::FunctionDecl *functionDecl);
+
+    virtual ~ChangeSignatureRefactoring() override;
+
+    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+
+    virtual QString name() const override;
+
+private:
+    std::unique_ptr<const InfoPack> m_infoPack;
+};
+
+
+#endif //KDEV_CLANG_CHANGESIGNATUREREFACTORING_H

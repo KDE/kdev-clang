@@ -19,19 +19,38 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_DEBUG_H
-#define KDEV_CLANG_DEBUG_H
+#ifndef KDEV_CLANG_CHANGESIGNATUREDIALOG_H
+#define KDEV_CLANG_CHANGESIGNATUREDIALOG_H
 
-#include <QtCore/QLoggingCategory>
+// Qt
+#include <QDialog>
 
-#include <llvm/ADT/StringRef.h>
+#include "ui_changesignaturedialog.h"
 
-Q_DECLARE_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING)
-#define refactorDebug() qCDebug(KDEV_CLANG_REFACTORING)
-#define refactorWarning() qCWarning(KDEV_CLANG_REFACTORING)
-#define refactorCritical() qCCritical(KDEV_CLANG_REFACTORING)
+#include "changesignaturerefactoring.h"
 
-QDebug operator<<(QDebug dbg, const std::string &string);
-QDebug operator<<(QDebug dbg, llvm::StringRef string);
+class ChangeSignatureDialog : public QDialog, private Ui::ChangeSignatureDialog
+{
+    Q_OBJECT;
+    Q_DISABLE_COPY(ChangeSignatureDialog);
 
-#endif //KDEV_CLANG_DEBUG_H
+    class Model;
+
+    using InfoPack = ChangeSignatureRefactoring::InfoPack;
+    using ChangePack = ChangeSignatureRefactoring::ChangePack;
+
+public:
+    ChangeSignatureDialog(const InfoPack *infoPack, QWidget *parent = nullptr);
+
+    const InfoPack *infoPack() const;
+    const ChangePack *changePack() const;
+
+private:
+    void reinitializeDialogData();
+
+private:
+    Model *m_model;
+};
+
+
+#endif //KDEV_CLANG_CHANGESIGNATUREDIALOG_H

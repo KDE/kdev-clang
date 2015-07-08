@@ -34,6 +34,7 @@
 #include "renamefielddeclrefactoring.h"
 #include "renamefielddeclturefactoring.h"
 #include "declarationcomparator.h"
+#include "changesignaturerefactoring.h"
 #include "debug.h"
 
 using namespace std;
@@ -226,7 +227,7 @@ template<class Node>
 llvm::StringRef ExplorerRecursiveASTVisitor::fileName(const Node &node) const
 {
     auto file = m_ASTConsumer.m_CI.getSourceManager().getFilename(
-            node->getSourceRange().getBegin());
+        node->getSourceRange().getBegin());
     Q_ASSERT(!file.empty());
     return file;
 }
@@ -325,32 +326,22 @@ bool ExplorerRecursiveASTVisitor::VisitMemberExpr(MemberExpr *memberExpr)
     return true;
 }
 
-#if 0   // Provide change signature instead
-Refactoring *ExplorerRecursiveASTVisitor::refactoringForFunctionDecl(const FunctionDecl *functionDecl) const
+Refactoring *ExplorerRecursiveASTVisitor::refactoringForFunctionDecl(
+    const FunctionDecl *functionDecl) const
 {
     auto canonicalDecl = functionDecl->getCanonicalDecl();
-    // what is VisibleNoLinkage ?
-    Q_ASSERT(canonicalDecl->getLinkageInternal() != VisibleNoLinkage);
-    std::string qualName;
-    if (canonicalDecl->getLinkageInternal() == ExternalLinkage) {
-        qualName = canonicalDecl->getQualifiedNameAsString();
-        refactorDebug() << "Renaming function with external linkage using" << qualName <<
-                        "as qualified name";
-    }
-
-    auto file = fileName(canonicalDecl);
-    auto offset = fileOffset(canonicalDecl);
-    auto name = canonicalDecl->getName().str();
-    return new RenameFunctionDeclRefactoring(file, offset, name, std::move(qualName));
+    return new ChangeSignatureRefactoring(canonicalDecl);
 }
-#endif
 
 bool ExplorerRecursiveASTVisitor::VisitFunctionDecl(FunctionDecl *functionDecl)
 {
-    if(isInRange(functionDecl->getLocation()))
-    {
+    const TypeLoc loc = functionDecl->getTypeSourceInfo()->getTypeLoc();
+    Q_ASSERT(loc);
+    auto range = tokenRangeToCharRange(SourceRange(functionDecl->getLocStart(), loc.getEndLoc()),
+                                       m_ASTConsumer.m_CI);
+    if (isInRange(range)) {
         done();
-        //addRefactoring(refactoringForFunctionDecl(functionDecl));
+        addRefactoring(refactoringForFunctionDecl(functionDecl));
         // other options here...
     }
 

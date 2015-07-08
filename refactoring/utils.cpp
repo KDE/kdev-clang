@@ -328,3 +328,40 @@ std::unique_ptr<DeclarationComparator> declarationComparator(const Decl *decl)
     }
     return cpp::make_unique<RedeclarationChain>(decl);
 }
+
+int getTokenRangeSize(const SourceRange &range, const SourceManager &sourceManager,
+                      const LangOptions &langOpts)
+{
+    SourceLocation spellingBegin = sourceManager.getSpellingLoc(range.getBegin());
+    SourceLocation spellingEnd = sourceManager.getSpellingLoc(range.getEnd());
+    std::pair<FileID, unsigned> start = sourceManager.getDecomposedLoc(spellingBegin);
+    std::pair<FileID, unsigned> end = sourceManager.getDecomposedLoc(spellingEnd);
+    if (start.first != end.first) {
+        return -1;
+    }
+    end.second += Lexer::MeasureTokenLength(spellingEnd, sourceManager, langOpts);
+    return end.second - start.second;
+}
+
+std::string textFromTokenRange(clang::SourceRange range, const clang::SourceManager &sourceManager,
+                               const clang::LangOptions &langOpts)
+{
+    int size = getTokenRangeSize(range, sourceManager, langOpts);
+    const char *data = sourceManager.getCharacterData(range.getBegin());
+    if (data == nullptr) {
+        refactorWarning() << "data is nullptr";
+    } else if (size == -1) {
+        refactorWarning() << "range does not fit in one file";
+    } else {
+        Q_ASSERT(size >= 0);
+        return std::string(data, static_cast<std::size_t>(size));
+    }
+    return "$FAILED$";  // Always invalid as source code
+}
+
+void dumpTokenRange(clang::SourceRange range, const SourceManager &sourceManager,
+                    const LangOptions &langOpts)
+{
+    refactorDebug() << textFromTokenRange(range, sourceManager, langOpts);
+}
+
