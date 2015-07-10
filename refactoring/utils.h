@@ -83,4 +83,8 @@ clang::SourceRange tokenRangeToCharRange(clang::SourceRange range,
 clang::SourceRange tokenRangeToCharRange(clang::SourceRange range,
                                          const clang::CompilerInstance &CI);
 
+// NOTE: @p offset must be equal to location offset
+bool isLocationEqual(const std::string &fileName, unsigned offset, clang::SourceLocation location,
+                     const clang::SourceManager &sourceManager);
+
 #endif //KDEV_CLANG_UTILS_H

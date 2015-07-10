@@ -37,11 +37,12 @@
 #include <project/interfaces/iprojectbuilder.h>
 #include <project/projectmodel.h>
 
-#include "../clangsupport.h"
-#include "../util/clangdebug.h"
-
 #include "interface.h"
 #include "refactoringmanager.h"
+#include "debug.h"
+
+#include "../clangsupport.h"
+
 
 using namespace KDevelop;
 using namespace Refactorings;
@@ -93,7 +94,7 @@ void KDevRefactorings::fillContextMenu(ContextMenuExtension &extension, Context 
 void KDevRefactorings::projectOpened(IProject *project)
 {
     Q_ASSERT(project);
-    clangDebug() << project->name() << "opened";
+    refactorDebug() << project->name() << "opened";
     auto projectBuilder = project->buildSystemManager()->builder();
     // IProjectBuilder declares signal configured(), but is unused...
 
@@ -110,10 +111,10 @@ void KDevRefactorings::projectOpened(IProject *project)
 void KDevRefactorings::projectConfigured(IProject *project)
 {
     Q_ASSERT(project);
-    clangDebug() << project->name() << "configured";
+    refactorDebug() << project->name() << "configured";
     auto buildSystemManager = project->buildSystemManager();
     Path buildPath = buildSystemManager->buildDirectory(project->projectItem());
-    clangDebug() << "build path:" << buildPath;
+    refactorDebug() << "build path:" << buildPath;
 
     // FIXME: do it async (in background)
     // FIXME: handle non-CMake project
@@ -122,12 +123,12 @@ void KDevRefactorings::projectConfigured(IProject *project)
             buildPath.toLocalFile().toStdString(), Refactorings::ProjectKind::CMAKE, errorMessage);
     if (!compilationDatabase) {
         // TODO: show message for that
-        clangDebug() << "Cannot create compilation database for" << project->name() << ":" <<
-                     errorMessage;
+        refactorDebug() << "Cannot create compilation database for" << project->name() << ":" <<
+                        errorMessage;
         return;
     }
     auto refactoringsContext = Refactorings::createRefactoringsContext(compilationDatabase);
     Q_ASSERT(refactoringsContext);
     m_refactoringsContext = refactoringsContext;
-    clangDebug() << "RefactoringsContext sucessfully (re)generated!";
+    refactorDebug() << "RefactoringsContext sucessfully (re)generated!";
 }

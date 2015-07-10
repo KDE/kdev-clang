@@ -37,7 +37,9 @@ class RenameVarDeclRefactoring : public Refactoring
     Q_OBJECT;
     Q_DISABLE_COPY(RenameVarDeclRefactoring);
 public:
-    RenameVarDeclRefactoring(const std::string &fileName, unsigned offset, const std::string& declName, QObject *parent=nullptr);
+    RenameVarDeclRefactoring(const std::string &fileName, unsigned offset,
+                             const std::string &declName, std::string oldQualName,
+                             QObject *parent = nullptr);
 
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
 
@@ -47,6 +49,7 @@ private:
     const std::string m_fileName;
     const unsigned m_offset;
     const std::string m_oldVarDeclName;
+    const std::string m_oldQualName;
 };
 
 

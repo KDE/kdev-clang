@@ -31,14 +31,17 @@
 #include "documentcache.h"
 #include "utils.h"
 #include "renamevardeclrefactoring.h"
+#include "debug.h"
 
-#include "../util/clangdebug.h"
 #include "renamevardeclrefactoring.h"
 
 using namespace std;
 using namespace llvm;
 using namespace clang;
 using namespace clang::tooling;
+
+namespace
+{
 
 class ExplorerASTConsumer;
 
@@ -47,11 +50,20 @@ class ExplorerActionFactory;
 class ExplorerRecursiveASTVisitor : public RecursiveASTVisitor<ExplorerRecursiveASTVisitor>
 {
 public:
-    ExplorerRecursiveASTVisitor(ExplorerASTConsumer &ASTConsumer) : m_ASTConsumer(ASTConsumer) { }
+    ExplorerRecursiveASTVisitor(ExplorerASTConsumer &ASTConsumer)
+        : m_ASTConsumer(ASTConsumer)
+    {
+    }
 
     bool VisitDeclRefExpr(DeclRefExpr *declRefExpr);
 
+    bool VisitVarDecl(VarDecl *varDecl);
+
 private:
+    bool isInRange(SourceRange range) const;
+
+    Refactoring *refactoringForVarDecl(const VarDecl *varDecl) const;
+
     /// Request ClangTool to stop after this translation unit
     void done();
 
@@ -79,7 +91,10 @@ private:
 class ExplorerAction : public ASTFrontendAction
 {
 public:
-    ExplorerAction(ExplorerActionFactory &factory) : m_factory(factory) { }
+    ExplorerAction(ExplorerActionFactory &factory)
+        : m_factory(factory)
+    {
+    }
 
 protected:
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
@@ -97,7 +112,10 @@ class ExplorerActionFactory : public FrontendActionFactory
 
 public:
     ExplorerActionFactory(const std::string &fileName, unsigned offset)
-            : m_fileName(fileName), m_offset(offset) { }
+        : m_fileName(fileName),
+          m_offset(offset)
+    {
+    }
 
     virtual clang::FrontendAction *create();
 
@@ -106,24 +124,23 @@ public:
         return m_stop;
     }
 
-    std::vector<Refactoring *> &refactorings()
-    {
-        return m_refactorings;
-    }
-
+    std::vector<Refactoring *> m_refactorings;
 private:
     const std::string &m_fileName;
     const unsigned m_offset;
     bool m_stop = false;  // no need to parse more source files
-    std::vector<Refactoring *> m_refactorings;
 };
 
-RefactoringManager::RefactoringManager(QObject *parent) : QObject(parent)
+}
+
+RefactoringManager::RefactoringManager(QObject *parent)
+    : QObject(parent)
 {
 }
 
-std::vector<Refactoring *> RefactoringManager::allApplicableRefactorings(
-        RefactoringContext *ctx, const QUrl &sourceFile, const KTextEditor::Cursor &location)
+std::vector<Refactoring *> RefactoringManager::allApplicableRefactorings(RefactoringContext *ctx,
+                                                                         const QUrl &sourceFile,
+                                                                         const KTextEditor::Cursor &location)
 {
     const string filename = sourceFile.toLocalFile().toStdString();
     auto clangTool = ctx->cache->refactoringToolForFile(filename);
@@ -132,20 +149,24 @@ std::vector<Refactoring *> RefactoringManager::allApplicableRefactorings(
         auto _offset = ctx->offset(filename, location);
         if (!_offset) {
             // TODO: notify user
-            clangDebug() << "Unable to translate cursor position to offset in file:" <<
-                         _offset.getError().message().c_str();
+            refactorDebug() << "Unable to translate cursor position to offset in file:" <<
+                            _offset.getError().message();
             return {};
         }
         offset = _offset.get();
     }
     auto faf = cpp::make_unique<ExplorerActionFactory>(filename, offset);
     clangTool.run(faf.get());
-    return std::move(faf->refactorings());
+    return std::move(faf->m_refactorings);
 }
 
 
 ExplorerASTConsumer::ExplorerASTConsumer(ExplorerActionFactory &factory, CompilerInstance &CI)
-        : m_visitor(*this), m_factory(factory), m_CI(CI) { }
+    : m_visitor(*this),
+      m_factory(factory),
+      m_CI(CI)
+{
+}
 
 std::unique_ptr<ASTConsumer> ExplorerAction::CreateASTConsumer(CompilerInstance &CI,
                                                                StringRef InFile)
@@ -153,7 +174,7 @@ std::unique_ptr<ASTConsumer> ExplorerAction::CreateASTConsumer(CompilerInstance 
     Q_UNUSED(InFile);
     // try to fail here if work is done
     if (m_factory.wantStop()) {
-        clangDebug() << "want stop" << InFile.str().c_str();
+        refactorDebug() << "want stop" << InFile;
         return nullptr;
     } else {
         return std::unique_ptr<ASTConsumer>(new ExplorerASTConsumer(m_factory, CI));
@@ -170,6 +191,12 @@ clang::FrontendAction *ExplorerActionFactory::create()
     return new ExplorerAction(*this);
 }
 
+bool ExplorerRecursiveASTVisitor::isInRange(SourceRange range) const
+{
+    return ::isInRange(m_ASTConsumer.m_factory.m_fileName, m_ASTConsumer.m_factory.m_offset, range,
+                       m_ASTConsumer.m_CI.getSourceManager());
+}
+
 void ExplorerRecursiveASTVisitor::done()
 {
     m_ASTConsumer.m_factory.m_stop = true;
@@ -182,27 +209,51 @@ void ExplorerRecursiveASTVisitor::addRefactoring(Refactoring *refactoring)
 
 ////////////////////// DECISIONS ARE MADE BELOW ///////////////////////
 
+Refactoring *ExplorerRecursiveASTVisitor::refactoringForVarDecl(const VarDecl *varDecl) const
+{
+    auto canonicalDecl = varDecl->getCanonicalDecl();
+    // what is VisibleNoLinkage ?
+    Q_ASSERT(canonicalDecl->getLinkageInternal() != VisibleNoLinkage);
+    std::string qualName;
+    if (canonicalDecl->getLinkageInternal() == ExternalLinkage) {
+        qualName = canonicalDecl->getQualifiedNameAsString();
+        refactorDebug() << "Renaming variable with external linkage - using" << qualName <<
+                        "as qualified name";
+    }
+
+    auto file = m_ASTConsumer.m_CI.getSourceManager().getFilename(
+            canonicalDecl->getSourceRange().getBegin());
+    Q_ASSERT(!file.empty());
+    auto offset = m_ASTConsumer.m_CI.getSourceManager().getFileOffset(
+            canonicalDecl->getSourceRange().getBegin());    // getLocation?
+    auto name = canonicalDecl->getName().str();
+    return new RenameVarDeclRefactoring(file, offset, name, std::move(qualName));
+}
 
 bool ExplorerRecursiveASTVisitor::VisitDeclRefExpr(DeclRefExpr *declRefExpr)
 {
-    auto range = tokenRangeToCharRange(declRefExpr->getSourceRange(), m_ASTConsumer.m_CI);
-    if (isInRange(m_ASTConsumer.m_factory.m_fileName, m_ASTConsumer.m_factory.m_offset, range,
-                  m_ASTConsumer.m_CI.getSourceManager())) {
+    auto range = tokenRangeToCharRange(declRefExpr->getLocation(), m_ASTConsumer.m_CI);
+    if (isInRange(range)) {
         done();
         const VarDecl *varDecl = llvm::dyn_cast<VarDecl>(declRefExpr->getDecl());
         if (!varDecl) {
-            clangDebug() << "Found DeclRefExpr, but its declaration is not VarDecl";
+            refactorDebug() << "Found DeclRefExpr, but its declaration is not VarDecl";
             return true;
         }
-        auto cannoDecl = varDecl->getCanonicalDecl();
-        auto file = m_ASTConsumer.m_CI.getSourceManager().getFilename(
-                cannoDecl->getSourceRange().getBegin());
-        Q_ASSERT(!file.empty());
-        auto offset = m_ASTConsumer.m_CI.getSourceManager().getFileOffset(
-                cannoDecl->getSourceRange().getBegin());
-        auto name = cannoDecl->getName().str();
-        addRefactoring(new RenameVarDeclRefactoring(file, offset, name));
+        addRefactoring(refactoringForVarDecl(varDecl));
         // other options here...
     }
     return true;
 }
+
+bool ExplorerRecursiveASTVisitor::VisitVarDecl(VarDecl *varDecl)
+{
+    auto range = tokenRangeToCharRange(varDecl->getLocation(), m_ASTConsumer.m_CI);
+    if (isInRange(range)) {
+        done();
+        addRefactoring(refactoringForVarDecl(varDecl));
+        // other options here...
+    }
+    return true;
+}
+

@@ -279,3 +279,17 @@ SourceRange tokenRangeToCharRange(SourceRange range,
     return tokenRangeToCharRange(range, CI.getSourceManager(), CI.getLangOpts());
 }
 
+bool isLocationEqual(const std::string &fileName, unsigned offset, clang::SourceLocation location,
+                     const clang::SourceManager &sourceManager)
+{
+    auto locationD = sourceManager.getDecomposedLoc(location);
+    auto fileEntry = sourceManager.getFileEntryForID(locationD.first);
+    if (fileEntry == nullptr) {
+        return false;
+    }
+    if (!llvm::sys::fs::equivalent(fileEntry->getName(), fileName)) {
+        return false;
+    }
+    return locationD.second == offset;
+}
+

@@ -10,6 +10,7 @@ set(SRCS
     renamevardeclrefactoring.cpp
     refactoringcontext.cpp
     refactoringmanager.cpp
+    debug.cpp
 )
 
 add_library(kdevclangrefactor STATIC

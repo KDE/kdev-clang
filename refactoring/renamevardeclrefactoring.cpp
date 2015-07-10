@@ -36,7 +36,7 @@
 #include "documentcache.h"
 #include "utils.h"
 
-#include "../util/clangdebug.h"
+#include "debug.h"
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -45,39 +45,43 @@ using namespace clang::tooling;
 class Renamer : public MatchFinder::MatchCallback
 {
 public:
-    Renamer(const std::string &filename, unsigned offset, const std::string &newName,
-            Replacements &replacements)
+    Renamer(const std::string &filename, unsigned offset, const std::string &oldQualName,
+            const std::string &newName, Replacements &replacements)
         : m_filename(filename)
           , m_offset(offset)
+          , m_oldQualName(oldQualName)
           , m_newName(newName)
           , m_replacements(replacements)
     {
     }
 
-    virtual void run(MatchFinder::MatchResult const &result) override;
+    virtual void run(const MatchFinder::MatchResult &result) override;
 
-    const VarDecl *foundDeclaration() const
-    {
-        return m_foundDeclaration;
-    }
+    void handleDeclRefExpr(const MatchFinder::MatchResult &result, const DeclRefExpr *declRefExpr);
+
+    void handleVarDecl(const MatchFinder::MatchResult &result, const VarDecl *varDecl);
 
 private:
-    const std::string m_filename;
+    bool applicableTo(const VarDecl *canonicalVarDecl,
+                      const MatchFinder::MatchResult &result) const;
+
+private:
+    const std::string &m_filename;
     const unsigned m_offset;
+    const std::string &m_oldQualName;
     const std::string m_newName;
     Replacements &m_replacements;
-
-private:
-    const VarDecl *m_foundDeclaration = nullptr;
 };
 
 
 RenameVarDeclRefactoring::RenameVarDeclRefactoring(const std::string &fileName, unsigned offset,
-                                                   const std::string &declName, QObject *parent)
+                                                   const std::string &declName,
+                                                   std::string oldQualName, QObject *parent)
     : Refactoring(parent)
       , m_fileName(fileName)
       , m_offset(offset)
       , m_oldVarDeclName(declName)
+      , m_oldQualName(std::move(oldQualName))
 {
 }
 
@@ -86,20 +90,25 @@ llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
 {
     auto clangTool = ctx->cache->refactoringTool();
 
-    // FIXME: provide old name as default
+    const QString oldName = QString::fromStdString(m_oldVarDeclName);
     const QString newName = QInputDialog::getText(nullptr, i18n("Rename variable"),
-                                                  i18n("Type new name of variable"));
-    if (newName.isEmpty()) {
+                                                  i18n("Type new name of variable"),
+                                                  QLineEdit::Normal,
+                                                  oldName);
+    if (newName.isEmpty() || newName == oldName) {
         return clangTool.getReplacements();
     }
 
-    clangDebug() << "Will rename" << m_oldVarDeclName.c_str() << "to:" << newName;
+    refactorDebug() << "Will rename" << m_oldVarDeclName.c_str() << "to:" << newName;
 
-    auto matcher = declRefExpr().bind("DeclRef");
+    auto declRefMatcher = declRefExpr().bind("DeclRef");
+    auto varDeclMatcher = varDecl().bind("VarDecl");
 
-    Renamer renamer(m_fileName, m_offset, newName.toStdString(), clangTool.getReplacements());
+    Renamer renamer(m_fileName, m_offset, m_oldQualName, newName.toStdString(),
+                    clangTool.getReplacements());
     MatchFinder finder;
-    finder.addMatcher(matcher, &renamer);
+    finder.addMatcher(declRefMatcher, &renamer);
+    finder.addMatcher(varDeclMatcher, &renamer);
 
     clangTool.run(tooling::newFrontendActionFactory(&finder).get());
 
@@ -110,47 +119,65 @@ llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
 
 QString RenameVarDeclRefactoring::name() const
 {
-    return i18n("rename");
+    return i18n("rename [%1]").arg(
+        QString::fromStdString(m_oldQualName.empty() ? m_oldVarDeclName : m_oldQualName));
 }
 
 void Renamer::run(const MatchFinder::MatchResult &result)
 {
-    // FIXME: collect all DeclRefExpr for this DeclRefExpr/VarDecl
-    // FIXME: collect all VarDecl for this DeclRefExpr/VarDecl
-    // FIXME: compare canonical VarDecl's
     const DeclRefExpr *declRefExpr = result.Nodes.getStmtAs<DeclRefExpr>("DeclRef");
-    if (!declRefExpr) {
-        return;
+    if (declRefExpr) {
+        return handleDeclRefExpr(result, declRefExpr);
     }
-    const VarDecl *varDecl = llvm::dyn_cast<VarDecl>(declRefExpr->getDecl()); // NamedDecl?
-    if (!varDecl) {
-        return;
+    const VarDecl *varDecl = result.Nodes.getDeclAs<VarDecl>("VarDecl");
+    if (varDecl) {
+        return handleVarDecl(result, varDecl);
     }
-    CharSourceRange range = CharSourceRange::getTokenRange(varDecl->getSourceRange());
-    auto begin = result.SourceManager->getDecomposedLoc(range.getBegin());
-    auto end = result.SourceManager->getDecomposedLoc(range.getEnd().getLocWithOffset(
-        Lexer::MeasureTokenLength(range.getEnd(), *result.SourceManager,
-                                  result.Context->getLangOpts())));
-    auto fileEntry = result.SourceManager->getFileEntryForID(begin.first);
-    if (!llvm::sys::fs::equivalent(fileEntry->getName(), m_filename)) {
-        return;
-    }
-    varDecl->dump();
-    clangDebug() << begin.second << m_offset << end.second;
-    if (begin.second <= m_offset && m_offset <= end.second) {
-        if (!m_foundDeclaration) {
-            m_foundDeclaration = varDecl;
-            m_replacements.insert(Replacement(*result.SourceManager, varDecl->getLocation(),
-                                              varDecl->getIdentifier()->getLength(), m_newName));
-            // TODO Clang 3.7: add last parameter result.Context->getLangOpts() above
-            // TODO: consider using Lexer::MeasureTokenLength above
+    Q_ASSERT(false);
 
-            // getLocation() returns begin of name, the rest - begin of declaration (type)
-            // consider reduction of acceptable range to avoid interference with other refactorings
-            // e.g. int myNumber = myFavouriteInteger();
-            // could allow renaming of type (int), variable name (myNumber), function name
-            // (myFavouriteInteger).
-        }
-        m_replacements.insert(Replacement(*result.SourceManager, declRefExpr, m_newName));
+    // getLocation() returns begin of name, the rest - begin of declaration (type)
+
+    // in general canonical declaration is the first declaration in TU
+    // it may or may not be equal to canonical declaration in another TU
+    // e.g. both forward declare extern variable in two different locations in files
+}
+
+void Renamer::handleDeclRefExpr(const MatchFinder::MatchResult &result,
+                                const DeclRefExpr *declRefExpr)
+{
+    const VarDecl *varDecl = llvm::dyn_cast<VarDecl>(declRefExpr->getDecl());
+    if (varDecl == nullptr) {
+        return;
     }
+    const VarDecl *canonicalVarDecl = varDecl->getCanonicalDecl();
+    if (!applicableTo(canonicalVarDecl, result)) {
+        return;
+    }
+    m_replacements.insert(Replacement(*result.SourceManager,
+                                      CharSourceRange::getTokenRange(declRefExpr->getLocation()),
+                                      m_newName));
+    // TODO Clang 3.7: add last parameter result.Context->getLangOpts() above
+}
+
+void Renamer::handleVarDecl(const MatchFinder::MatchResult &result, const VarDecl *varDecl)
+{
+    const VarDecl *canonicalVarDecl = varDecl->getCanonicalDecl();
+    if (!applicableTo(canonicalVarDecl, result)) {
+        return;
+    }
+    m_replacements.insert(Replacement(*result.SourceManager, varDecl->getLocation(),
+                                      Lexer::MeasureTokenLength(
+                                          varDecl->getLocation(), *result.SourceManager,
+                                          result.Context->getLangOpts()),
+                                      m_newName));
+    // TODO Clang 3.7: add last parameter result.Context->getLangOpts() above
+}
+
+bool Renamer::applicableTo(const VarDecl *canonicalVarDecl,
+                           const MatchFinder::MatchResult &result) const
+{
+    return (canonicalVarDecl->getLinkageInternal() == ExternalLinkage &&
+            canonicalVarDecl->getQualifiedNameAsString() == m_oldQualName) ||
+           isLocationEqual(m_filename, m_offset, canonicalVarDecl->getSourceRange().getBegin(),
+                           *result.SourceManager);
 }
