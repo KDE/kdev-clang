@@ -30,6 +30,15 @@ set_package_properties(Clang PROPERTIES
     PURPOSE "LibClang is a high level C interface to clang"
     URL "http://clang.llvm.org/")
 
+if(LLVM_VERSION MATCHES "^3\\.6\\..*$") # expected version 3.6.*
+# NOTE: This checks HOST, not TARGET. It may misbehave when cross-compiling.
+# Only because of dependency on ncurses, but this dependency is pulled in by Clang, which works
+# somehow on Windows too.
+if(CMAKE_HOST_UNIX)
+    set(BUILD_REFACTORINGS ON)
+endif()
+endif()
+
 add_definitions(${LLVM_CFLAGS})
 include_directories(
     ${CLANG_INCLUDE_DIR}
@@ -62,6 +71,11 @@ add_subdirectory(codegen)
 add_subdirectory(util)
 add_subdirectory(tests)
 
+if(${BUILD_REFACTORINGS})
+    add_definitions(-DBUILD_REFACTORINGS)
+    add_subdirectory(refactoring)
+endif()
+
 set(kdevclangsupport_SRCS
     clangparsejob.cpp
     clangsupport.cpp
@@ -70,7 +84,7 @@ set(kdevclangsupport_SRCS
 
 kdevplatform_add_plugin(kdevclangsupport JSON kdevclangsupport.json SOURCES ${kdevclangsupport_SRCS})
 
-target_link_libraries(kdevclangsupport
+set(LINK_LIBS
     kdevclangduchain
     kdevclangcodecompletion
     kdevclangcodegen
@@ -79,7 +93,14 @@ target_link_libraries(kdevclangsupport
     KF5::ThreadWeaver
     KF5::TextEditor
     KDev::Util
-    KDev::Project
+    KDev::Project)
+
+if(${BUILD_REFACTORINGS})
+    list(APPEND LINK_LIBS kdevclangrefactor)
+endif()
+
+target_link_libraries(kdevclangsupport
+    ${LINK_LIBS}
 )
 
 install(FILES kdevclangsupport.rc DESTINATION ${KXMLGUI_INSTALL_DIR}/kdevclangsupport)

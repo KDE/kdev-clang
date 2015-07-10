@@ -33,6 +33,8 @@
 
 #include "clanghighlighting.h"
 
+#include "refactoring/kdevrefactorings.h"
+
 #include <interfaces/icore.h>
 #include <interfaces/ilanguagecontroller.h>
 #include <interfaces/iplugincontroller.h>
@@ -213,6 +215,7 @@ ClangSupport::ClangSupport(QObject* parent, const QVariantList& )
     , m_highlighting(nullptr)
     , m_refactoring(nullptr)
     , m_index(nullptr)
+    , m_refactoringsGlue(nullptr)
 {
     KDEV_USE_EXTENSION_INTERFACE( KDevelop::ILanguageSupport )
     setXMLFile( "kdevclangsupport.rc" );
@@ -222,6 +225,7 @@ ClangSupport::ClangSupport(QObject* parent, const QVariantList& )
     m_highlighting = new ClangHighlighting(this);
     m_refactoring = new SimpleRefactoring(this);
     m_index.reset(new ClangIndex);
+    m_refactoringsGlue = new KDevRefactorings(this);
 
     new KDevelop::CodeCompletion( this, new ClangCodeCompletionModel(this), name() );
     for(const auto& type : DocumentFinderHelpers::mimeTypesList()){
@@ -306,6 +310,7 @@ KDevelop::ContextMenuExtension ClangSupport::contextMenuExtension(KDevelop::Cont
     if (ec && ICore::self()->languageController()->languagesForUrl(ec->url()).contains(this)) {
         // It's a C++ file, let's add our context menu.
         m_refactoring->fillContextMenu(cm, context);
+        m_refactoringsGlue->fillContextMenu(cm, context);
     }
     return cm;
 }
