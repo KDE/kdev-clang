@@ -66,6 +66,29 @@ ecm_add_test(test_problems.cpp
         kdevclangduchain
 )
 
+if(${BUILD_REFACTORINGS})
+
+add_library(refactorenv STATIC
+    refactoringenvironment.cpp
+)
+
+target_link_libraries(refactorenv
+    KDev::Tests
+    Qt5::Test
+    kdevclangrefactor
+)
+
+ecm_add_test(test_renamevar.cpp
+    TEST_NAME test_renamevar
+    LINK_LIBRARIES
+        KDev::Tests
+        Qt5::Test
+        refactorenv
+        kdevclangrefactor
+)
+
+endif()
+
 if(KDEVPLATFORM_JSONTESTS_LIBRARIES)
   configure_file("testfilepaths.h.cmake" "testfilepaths.h" ESCAPE_QUOTES)
   ecm_add_test(test_files.cpp

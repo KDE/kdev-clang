@@ -52,5 +52,14 @@ private:
     const std::string m_oldVarDeclName;
 };
 
+namespace Refactorings
+{
+namespace RenameVarDecl
+{
+int run(const DeclarationComparator *declComparator, const std::string &newName,
+        clang::tooling::RefactoringTool &tool);
+}
+}
+
 
 #endif //KDEV_CLANG_RENAMEVARDECLREFACTORING_H

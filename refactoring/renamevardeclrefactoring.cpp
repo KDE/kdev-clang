@@ -97,19 +97,30 @@ llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
 
     refactorDebug() << "Will rename" << m_oldVarDeclName << "to:" << newName;
 
-    auto declRefMatcher = declRefExpr().bind("DeclRef");
-    auto varDeclMatcher = varDecl().bind("VarDecl");
-
-    Renamer renamer(m_declComparator.get(), newName.toStdString(), clangTool.getReplacements());
-    MatchFinder finder;
-    finder.addMatcher(declRefMatcher, &renamer);
-    finder.addMatcher(varDeclMatcher, &renamer);
-
-    clangTool.run(tooling::newFrontendActionFactory(&finder).get());
+    Refactorings::RenameVarDecl::run(m_declComparator.get(), newName.toStdString(), clangTool);
 
     auto result = clangTool.getReplacements();
     clangTool.getReplacements().clear();
     return result;
+}
+
+namespace Refactorings
+{
+namespace RenameVarDecl
+{
+int run(const DeclarationComparator *declComparator, const string &newName, RefactoringTool &tool)
+{
+    auto declRefMatcher = declRefExpr().bind("DeclRef");
+    auto varDeclMatcher = varDecl().bind("VarDecl");
+
+    Renamer renamer(declComparator, newName, tool.getReplacements());
+    MatchFinder finder;
+    finder.addMatcher(declRefMatcher, &renamer);
+    finder.addMatcher(varDeclMatcher, &renamer);
+
+    return tool.run(newFrontendActionFactory(&finder).get());
+}
+}
 }
 
 QString RenameVarDeclRefactoring::name() const
