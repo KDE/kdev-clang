@@ -303,7 +303,7 @@ bool operator==(const LexicalLocation &lhs, const LexicalLocation &rhs)
 LexicalLocation lexicalLocation(const Decl *decl)
 {
     const auto &srcMgr = decl->getASTContext().getSourceManager();
-    auto location = srcMgr.getDecomposedLoc(decl->getLocStart());
+    auto location = srcMgr.getDecomposedLoc(decl->getLocation());
     auto fileEntry = srcMgr.getFileEntryForID(location.first);
     if (fileEntry == nullptr) {
         return {"", location.second};
@@ -365,3 +365,57 @@ void dumpTokenRange(clang::SourceRange range, const SourceManager &sourceManager
     refactorDebug() << textFromTokenRange(range, sourceManager, langOpts);
 }
 
+std::string suggestGetterName(const std::string &fieldName)
+{
+    Q_ASSERT(!fieldName.empty());
+    auto i = fieldName.find('_');
+    if (i != fieldName.npos && i + 1 < fieldName.size()) {
+        return fieldName.substr(i + 1);
+    } else if (i != fieldName.npos && fieldName.size() > 1) {
+        return fieldName.substr(0, i);
+    } else {
+        return std::string("get") + std::toupper(fieldName[0], std::locale()) + fieldName.substr(1);
+    }
+}
+
+std::string suggestSetterName(const std::string &fieldName)
+{
+    Q_ASSERT(!fieldName.empty());
+    auto i = fieldName.find('_');
+    std::string result;
+    if (i != fieldName.npos && i + 1 < fieldName.size()) {
+        result = fieldName.substr(i + 1);
+    } else if (i != fieldName.npos && fieldName.size() > 1) {
+        result = fieldName.substr(0, i);
+    } else {
+        result = fieldName;
+    }
+    result[0] = std::toupper(result[0], std::locale());
+    return "set" + result;
+}
+
+std::string functionName(const std::string &functionDeclaration, const std::string &fallbackName)
+{
+    auto ast = buildASTFromCode(functionDeclaration);
+    if (!ast) {
+        refactorWarning() << "Unable to parse function:\n" << functionDeclaration;
+        refactorWarning() << "Using fallback" << fallbackName;
+        return fallbackName;
+    }
+    TranslationUnitDecl *tuDecl = ast->getASTContext().getTranslationUnitDecl();
+    FunctionDecl *functionDecl = nullptr;
+    for (Decl *decl : tuDecl->decls()) {
+        if (FunctionDecl *fdecl = dyn_cast<FunctionDecl>(decl)) {
+            if (fdecl->isThisDeclarationADefinition()) {
+                functionDecl = fdecl;
+                break;
+            }
+        }
+    }
+    if (!functionDecl) {
+        refactorWarning() << "Didn't find function definition here:\n" << functionDeclaration;
+        refactorWarning() << "Using fallback" << fallbackName;
+        return fallbackName;
+    }
+    return functionDecl->getName();
+}

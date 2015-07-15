@@ -29,7 +29,6 @@
 // Clang
 #include <clang/AST/DeclBase.h>
 
-
 class DeclarationComparator;
 
 /**
@@ -41,6 +40,18 @@ public:
     TUDeclDispatcher(const DeclarationComparator *declComparator);
 
     bool equivalent(const clang::Decl *decl) const;
+
+    template<class T>
+    typename std::enable_if<std::is_base_of<clang::DeclContext, T>::value &&
+                            (!std::is_base_of<clang::Decl, T>::value), bool>::type
+    equivalent(const T *declContext) const
+    {
+        // required because there are classes which derive from both Decl and DeclContext
+        return equivalentImpl(declContext);
+    };
+
+private:
+    bool equivalentImpl(const clang::DeclContext *declContext) const;
 
 private:
     const DeclarationComparator *m_declComparator;

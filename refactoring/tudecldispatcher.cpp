@@ -27,7 +27,9 @@
 #include "utils.h"
 
 TUDeclDispatcher::TUDeclDispatcher(const DeclarationComparator *declComparator)
-    : m_declComparator(declComparator) { }
+    : m_declComparator(declComparator)
+{
+}
 
 bool TUDeclDispatcher::equivalent(const clang::Decl *decl) const
 {
@@ -40,4 +42,13 @@ bool TUDeclDispatcher::equivalent(const clang::Decl *decl) const
         m_cache[decl] = result;
         return result;
     }
+}
+
+bool TUDeclDispatcher::equivalentImpl(const clang::DeclContext *declContext) const
+{
+    auto asDecl = llvm::dyn_cast<clang::Decl>(declContext);
+    Q_ASSERT(asDecl != nullptr);
+    // every (instance) decl context should be decl
+    // http://clang.llvm.org/doxygen/classclang_1_1DeclContext.html#details
+    return equivalent(asDecl);
 }

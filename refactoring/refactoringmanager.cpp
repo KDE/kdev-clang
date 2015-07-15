@@ -35,6 +35,7 @@
 #include "renamefielddeclturefactoring.h"
 #include "declarationcomparator.h"
 #include "changesignaturerefactoring.h"
+#include "encapsulatefieldrefactoring.h"
 #include "debug.h"
 
 using namespace std;
@@ -80,11 +81,13 @@ private:
     template<class Node>
     unsigned fileOffset(const Node &node) const;
 
-    Refactoring *refactoringForVarDecl(const VarDecl *varDecl) const;
+    Refactoring *renameVarDeclRefactoring(const VarDecl *varDecl) const;
 
-    Refactoring *refactoringForFieldDecl(const FieldDecl *fieldDecl) const;
+    Refactoring *renameFieldDeclRefactoring(const FieldDecl *fieldDecl) const;
 
-    Refactoring *refactoringForFunctionDecl(const FunctionDecl *functionDecl) const;
+    Refactoring *changeSignatureRefactoring(const FunctionDecl *functionDecl) const;
+
+    Refactoring *encapsulateFieldRefactoring(const DeclaratorDecl *decl) const;
 
     /// Request ClangTool to stop after this translation unit
     void done();
@@ -134,8 +137,8 @@ class ExplorerActionFactory : public FrontendActionFactory
 
 public:
     ExplorerActionFactory(const std::string &fileName, unsigned offset)
-        : m_fileName(fileName),
-          m_offset(offset)
+        : m_fileName(fileName)
+        , m_offset(offset)
     {
     }
 
@@ -184,9 +187,9 @@ std::vector<Refactoring *> RefactoringManager::allApplicableRefactorings(Refacto
 
 
 ExplorerASTConsumer::ExplorerASTConsumer(ExplorerActionFactory &factory, CompilerInstance &CI)
-    : m_visitor(*this),
-      m_factory(factory),
-      m_CI(CI)
+    : m_visitor(*this)
+    , m_factory(factory)
+    , m_CI(CI)
 {
 }
 
@@ -250,7 +253,7 @@ void ExplorerRecursiveASTVisitor::addRefactoring(Refactoring *refactoring)
 
 ////////////////////// DECISIONS ARE MADE BELOW ///////////////////////
 
-Refactoring *ExplorerRecursiveASTVisitor::refactoringForVarDecl(const VarDecl *varDecl) const
+Refactoring *ExplorerRecursiveASTVisitor::renameVarDeclRefactoring(const VarDecl *varDecl) const
 {
     auto name = varDecl->getName().str();
     return new RenameVarDeclRefactoring(declarationComparator(varDecl), name);
@@ -266,7 +269,7 @@ bool ExplorerRecursiveASTVisitor::VisitDeclRefExpr(DeclRefExpr *declRefExpr)
             refactorDebug() << "Found DeclRefExpr, but its declaration is not VarDecl";
             return true;
         }
-        addRefactoring(refactoringForVarDecl(varDecl));
+        addRefactoring(renameVarDeclRefactoring(varDecl));
         // other options here...
     }
     return true;
@@ -277,13 +280,17 @@ bool ExplorerRecursiveASTVisitor::VisitVarDecl(VarDecl *varDecl)
     auto range = tokenRangeToCharRange(varDecl->getLocation(), m_ASTConsumer.m_CI);
     if (isInRange(range)) {
         done();
-        addRefactoring(refactoringForVarDecl(varDecl));
+        addRefactoring(renameVarDeclRefactoring(varDecl));
+        if (varDecl->isStaticDataMember()) {
+            addRefactoring(encapsulateFieldRefactoring(varDecl));
+        }
         // other options here...
     }
     return true;
 }
 
-Refactoring *ExplorerRecursiveASTVisitor::refactoringForFieldDecl(const FieldDecl *fieldDecl) const
+Refactoring *ExplorerRecursiveASTVisitor::renameFieldDeclRefactoring(
+    const FieldDecl *fieldDecl) const
 {
     auto canonicalDecl = fieldDecl->getCanonicalDecl();
     if (canonicalDecl->getLinkageInternal() == ExternalLinkage) {
@@ -305,7 +312,8 @@ bool ExplorerRecursiveASTVisitor::VisitFieldDecl(FieldDecl *fieldDecl)
 {
     if (isInRange(fieldDecl->getLocation())) {
         done();
-        addRefactoring(refactoringForFieldDecl(fieldDecl));
+        addRefactoring(renameFieldDeclRefactoring(fieldDecl));
+        addRefactoring(encapsulateFieldRefactoring(fieldDecl));
         // other options here...
     }
     return true;
@@ -316,17 +324,15 @@ bool ExplorerRecursiveASTVisitor::VisitMemberExpr(MemberExpr *memberExpr)
     if (isInRange(memberExpr->getMemberLoc())) {
         done();
         const FieldDecl *fieldDecl = llvm::dyn_cast<FieldDecl>(memberExpr->getMemberDecl());
-        if (!fieldDecl) {
-            // can be CXXMethodDecl as well, but that case is (will be) handled separately
-            return true;
+        if (fieldDecl) {
+            addRefactoring(renameFieldDeclRefactoring(fieldDecl));
         }
-        addRefactoring(refactoringForFieldDecl(fieldDecl));
         // other options here...
     }
     return true;
 }
 
-Refactoring *ExplorerRecursiveASTVisitor::refactoringForFunctionDecl(
+Refactoring *ExplorerRecursiveASTVisitor::changeSignatureRefactoring(
     const FunctionDecl *functionDecl) const
 {
     auto canonicalDecl = functionDecl->getCanonicalDecl();
@@ -341,10 +347,15 @@ bool ExplorerRecursiveASTVisitor::VisitFunctionDecl(FunctionDecl *functionDecl)
                                        m_ASTConsumer.m_CI);
     if (isInRange(range)) {
         done();
-        addRefactoring(refactoringForFunctionDecl(functionDecl));
+        addRefactoring(changeSignatureRefactoring(functionDecl));
         // other options here...
     }
 
     return true;
 }
 
+Refactoring *ExplorerRecursiveASTVisitor::encapsulateFieldRefactoring(
+    const DeclaratorDecl *decl) const
+{
+    return new EncapsulateFieldRefactoring(decl);
+}

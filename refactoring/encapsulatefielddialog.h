@@ -19,35 +19,32 @@
     Boston, MA 02110-1301, USA.
 */
 
-// Clang
-#include <clang/AST/Decl.h>
+#ifndef KDEV_CLANG_ENCAPSULATEFIELDDIALOG_H
+#define KDEV_CLANG_ENCAPSULATEFIELDDIALOG_H
 
-#include "redeclarationchain.h"
+#include <QDialog>
 
-using namespace clang;
+#include "encapsulatefieldrefactoring.h"
+#include "ui_encapsulatefielddialog.h"
 
-RedeclarationChain::RedeclarationChain(const clang::Decl *declNode)
+class EncapsulateFieldDialog : public QDialog, private Ui::EncapsulateFieldDialog
 {
-    for (auto decl : declNode->redecls()) {
-        auto loc = lexicalLocation(decl);
-        if (loc.fileName.empty()) {
-            continue;
-        }
-        m_declarationsLocations.insert(std::move(loc));
+    Q_OBJECT;
+    Q_DISABLE_COPY(EncapsulateFieldDialog);
+
+    using ChangePack = EncapsulateFieldRefactoring::ChangePack;
+
+public:
+    EncapsulateFieldDialog(ChangePack *changePack);
+
+    const ChangePack *changePack() const
+    {
+        return m_changePack;
     }
-}
 
-bool RedeclarationChain::intersects(const RedeclarationChain &other) const
-{
-    for (auto loc : m_declarationsLocations) {
-        if (other.m_declarationsLocations.find(loc) != other.m_declarationsLocations.end()) {
-            return true;
-        }
-    }
-    return false;
-}
+private:
+    ChangePack *m_changePack;
+};
 
-bool RedeclarationChain::equivalentTo(const Decl *decl) const
-{
-    return intersects(RedeclarationChain(decl));
-}
+
+#endif //KDEV_CLANG_ENCAPSULATEFIELDDIALOG_H

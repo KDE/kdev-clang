@@ -23,6 +23,9 @@ set(SRCS
     changesignaturerefactoring.cpp
     changesignaturerefactoringinfopack.cpp
     changesignaturerefactoringchangepack.cpp
+    encapsulatefieldrefactoring.cpp
+    encapsulatefielddialog.cpp
+    encapsulatefieldrefactoring_changepack.cpp
 )
 
 add_library(kdevclangrefactor STATIC

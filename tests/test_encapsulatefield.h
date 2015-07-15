@@ -19,35 +19,20 @@
     Boston, MA 02110-1301, USA.
 */
 
-// Clang
-#include <clang/AST/Decl.h>
+#ifndef KDEV_CLANG_TEST_ENCAPSULATEFIELD_H
+#define KDEV_CLANG_TEST_ENCAPSULATEFIELD_H
 
-#include "redeclarationchain.h"
+#include <QObject>
 
-using namespace clang;
-
-RedeclarationChain::RedeclarationChain(const clang::Decl *declNode)
+class TestEncapsulateField : public QObject
 {
-    for (auto decl : declNode->redecls()) {
-        auto loc = lexicalLocation(decl);
-        if (loc.fileName.empty()) {
-            continue;
-        }
-        m_declarationsLocations.insert(std::move(loc));
-    }
-}
+    Q_OBJECT;
 
-bool RedeclarationChain::intersects(const RedeclarationChain &other) const
-{
-    for (auto loc : m_declarationsLocations) {
-        if (other.m_declarationsLocations.find(loc) != other.m_declarationsLocations.end()) {
-            return true;
-        }
-    }
-    return false;
-}
+private slots:
+    void testSimpleConstRef();
+    void testStaticByValue();
+    void testStaticNoMutator();
+};
 
-bool RedeclarationChain::equivalentTo(const Decl *decl) const
-{
-    return intersects(RedeclarationChain(decl));
-}
+
+#endif //KDEV_CLANG_TEST_ENCAPSULATEFIELD_H
