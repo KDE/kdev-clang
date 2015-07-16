@@ -19,40 +19,25 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef KDEV_CLANG_RENAMEVARDECLREFACTORING_H
-#define KDEV_CLANG_RENAMEVARDECLREFACTORING_H
-
-// Clang
-#include <clang/Tooling/Refactoring.h>
+#ifndef KDEV_CLANG_RENAMEFIELDDECLREFACTORING_H
+#define KDEV_CLANG_RENAMEFIELDDECLREFACTORING_H
 
 #include "refactoring.h"
 
-class DocumentCache;
-
-/**
- * This class handles renaming of VerDecl AST node.
- */
-class RenameVarDeclRefactoring : public Refactoring
+class RenameFieldDeclRefactoring : public Refactoring
 {
-    // Consider splitting this into two refactorings: one for local (single TU) transformations,
-    // one for global (symbols with external linkage) transformations
     Q_OBJECT;
-    Q_DISABLE_COPY(RenameVarDeclRefactoring);
+    Q_DISABLE_COPY(RenameFieldDeclRefactoring);
 public:
-    RenameVarDeclRefactoring(const std::string &fileName, unsigned offset,
-                             const std::string &declName, std::string oldQualName,
-                             QObject *parent = nullptr);
+    RenameFieldDeclRefactoring(const std::string &oldName, std::string oldQualName);
 
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
 
     virtual QString name() const override;
-
 private:
-    const std::string m_fileName;
-    const unsigned m_offset;
-    const std::string m_oldVarDeclName;
+    const std::string m_oldFieldDeclName;
     const std::string m_oldQualName;
 };
 
 
-#endif //KDEV_CLANG_RENAMEVARDECLREFACTORING_H
+#endif //KDEV_CLANG_RENAMEFIELDDECLREFACTORING_H

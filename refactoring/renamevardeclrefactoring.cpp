@@ -42,6 +42,9 @@ using namespace clang;
 using namespace clang::ast_matchers;
 using namespace clang::tooling;
 
+namespace
+{
+
 class Renamer : public MatchFinder::MatchCallback
 {
 public:
@@ -73,6 +76,7 @@ private:
     Replacements &m_replacements;
 };
 
+};  // namespace
 
 RenameVarDeclRefactoring::RenameVarDeclRefactoring(const std::string &fileName, unsigned offset,
                                                    const std::string &declName,
@@ -88,7 +92,7 @@ RenameVarDeclRefactoring::RenameVarDeclRefactoring(const std::string &fileName, 
 llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
     RefactoringContext *ctx)
 {
-    auto clangTool = ctx->cache->refactoringTool();
+    auto &clangTool = ctx->cache->refactoringTool();
 
     const QString oldName = QString::fromStdString(m_oldVarDeclName);
     const QString newName = QInputDialog::getText(nullptr, i18n("Rename variable"),
@@ -99,7 +103,7 @@ llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
         return clangTool.getReplacements();
     }
 
-    refactorDebug() << "Will rename" << m_oldVarDeclName.c_str() << "to:" << newName;
+    refactorDebug() << "Will rename" << m_oldVarDeclName << "to:" << newName;
 
     auto declRefMatcher = declRefExpr().bind("DeclRef");
     auto varDeclMatcher = varDecl().bind("VarDecl");

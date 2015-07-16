@@ -11,6 +11,8 @@ set(SRCS
     refactoringcontext.cpp
     refactoringmanager.cpp
     debug.cpp
+    renamefielddeclrefactoring.cpp
+    renamefielddeclturefactoring.cpp
 )
 
 add_library(kdevclangrefactor STATIC
