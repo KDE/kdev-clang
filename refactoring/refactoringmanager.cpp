@@ -27,6 +27,7 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/Tooling/Tooling.h>
 
+#include "kdevrefactorings.h"
 #include "refactoringcontext.h"
 #include "documentcache.h"
 #include "utils.h"
@@ -158,31 +159,50 @@ private:
 
 }
 
-RefactoringManager::RefactoringManager(QObject *parent)
+#include "contextmenumutator.h"
+
+RefactoringManager::RefactoringManager(KDevRefactorings *parent)
     : QObject(parent)
 {
+    qRegisterMetaType<ContextMenuMutator *>();
+    qRegisterMetaType<QVector<Refactoring *>>();
 }
 
-std::vector<Refactoring *> RefactoringManager::allApplicableRefactorings(RefactoringContext *ctx,
-                                                                         const QUrl &sourceFile,
-                                                                         const KTextEditor::Cursor &location)
+KDevRefactorings *RefactoringManager::parent()
 {
-    const string filename = sourceFile.toLocalFile().toStdString();
-    auto clangTool = ctx->cache->refactoringToolForFile(filename);
+    return static_cast<KDevRefactorings *>(QObject::parent());
+}
+
+void RefactoringManager::fillContextMenu(KDevelop::ContextMenuExtension &extension,
+                                         KDevelop::EditorContext *context)
+{
+    const string filename = context->url().toLocalFile().toStdString();
     unsigned offset;
     {
-        auto _offset = ctx->offset(filename, location);
+        auto _offset = parent()->refactoringContext()->offset(filename, context->position());
         if (!_offset) {
             // TODO: notify user
             refactorDebug() << "Unable to translate cursor position to offset in file:" <<
                             _offset.getError().message();
-            return {};
+            return;
         }
         offset = _offset.get();
     }
-    auto faf = cpp::make_unique<ExplorerActionFactory>(filename, offset);
-    clangTool.run(faf.get());
-    return std::move(faf->m_refactorings);
+    auto mutator = new ContextMenuMutator(extension, this);
+    QThread *mainThread = thread(); // Only for lambda below
+    parent()->refactoringContext()->scheduleOnSingleFile(
+        [filename, offset, mainThread](RefactoringTool &clangTool)
+        {
+            auto faf = cpp::make_unique<ExplorerActionFactory>(filename, offset);
+            clangTool.run(faf.get());
+            for (Refactoring *r : faf->m_refactorings) {
+                r->moveToThread(mainThread);
+            }
+            return QVector<Refactoring *>::fromStdVector(faf->m_refactorings);
+        }, filename, [mutator](const QVector<Refactoring *> &result)
+        {
+            mutator->endFillingContextMenu(result);
+        });
 }
 
 

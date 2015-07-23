@@ -22,36 +22,38 @@
 #ifndef KDEV_CLANG_REFACTORINGMANAGER_H
 #define KDEV_CLANG_REFACTORINGMANAGER_H
 
-// base class
+// Qt
 #include <QObject>
+#include <QVector>
+
+// KDevelop
+#include <interfaces/contextmenuextension.h>
+#include <language/interfaces/editorcontext.h>
 
 // C++
-#include <vector>
 #include <memory>
 
 #include "refactoring.h"
+
+class KDevRefactorings;
 
 class RefactoringManager : public QObject
 {
     Q_OBJECT;
     Q_DISABLE_COPY(RefactoringManager);
-public:
-    RefactoringManager(QObject *parent);
 
-    /**
-     * Returns all applicable refactorings "here"
-     *
-     * @param rc Initialized refactorings context
-     * @param sourceFile queried source file name (full path)
-     * @param location offset from beginning of the file to location we are querying
-     *
-     * @return List of all applicable refactorings "here"
-     */
-    std::vector<Refactoring *> allApplicableRefactorings(RefactoringContext *ctx,
-                                                         const QUrl &sourceFile,
-                                                         const KTextEditor::Cursor &location);
-    // or make RefactoringContext* property
+public:
+    RefactoringManager(KDevRefactorings *parent);
+
+    void fillContextMenu(KDevelop::ContextMenuExtension &extension,
+                         KDevelop::EditorContext *context);
+
+    KDevRefactorings *parent();
+
+private:
+
 };
 
+Q_DECLARE_METATYPE(QVector<Refactoring *>);
 
 #endif //KDEV_CLANG_REFACTORINGMANAGER_H

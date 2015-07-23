@@ -80,13 +80,6 @@ void releaseCompilationDatabase(CompilationDatabase db)
 
 ///////////////// Refactoring Context
 
-RefactoringsContext createRefactoringsContext(CompilationDatabase db)
-{
-    auto result = new RefactoringContext(std::move(db->database));
-    releaseCompilationDatabase(db);
-    return result;
-}
-
 KDevelop::DocumentChangeSet refactorThis(RefactoringsContext rc, RefactoringKind refactoringKind,
                                          const QUrl &sourceFile,
                                          const KTextEditor::Cursor &position)

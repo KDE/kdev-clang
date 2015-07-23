@@ -35,8 +35,10 @@
 #include <interfaces/iproject.h>
 
 #include "interface.h"
+#include "refactoring.h"
 
 class ClangSupport;
+
 class RefactoringManager;
 
 /**
@@ -55,17 +57,14 @@ public:
     // TODO: Handle configuration of projects to regenerate CompilationDatabase
     // TODO: Handle above + changes in files (also creation) to update/regenerate RefactoringsContext
 
-private: // (slots)
-    // Only one project for now
-    void projectOpened(KDevelop::IProject* project);
-    void projectConfigured(KDevelop::IProject* project);
-
-    // TODO: (async)
-    void createRefactoringsContext();
+    RefactoringContext *refactoringContext()
+    {
+        return m_refactoringsContext;
+    }
 
 private:
-    Refactorings::RefactoringsContext m_refactoringsContext = nullptr;
-    RefactoringManager *m_refactoringManager;
+    RefactoringContext * const m_refactoringsContext;
+    RefactoringManager * const m_refactoringManager;
 };
 
 #endif //BUILD_REFACTORINGS

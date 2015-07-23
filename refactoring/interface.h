@@ -123,14 +123,6 @@ void releaseCompilationDatabase(CompilationDatabase db);
 std::vector<std::string> sources(CompilationDatabase db);
 
 /**
- * Prepare and return main context for refactorings in KDevelop.
- *
- * @param db Up-to-date compilation database
- * @return Context for future use with refactorings
- */
-RefactoringsContext createRefactoringsContext(CompilationDatabase db);
-
-/**
  * Invokes selected refactoring action on selected place in file.
  *
  * @param rc Initialized refactorings context

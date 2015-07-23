@@ -19,20 +19,94 @@
     Boston, MA 02110-1301, USA.
 */
 
+// KF5
+#include <KJob>
+
+// KDevelop
+#include <interfaces/icore.h>
+#include <interfaces/iproject.h>
+#include <interfaces/iprojectcontroller.h>
+#include <project/interfaces/ibuildsystemmanager.h>
+#include <project/interfaces/iprojectbuilder.h>
+#include <project/projectmodel.h>
+
 #include "refactoringcontext.h"
-
+#include "kdevrefactorings.h"
 #include "documentcache.h"
+#include "refactoringcontext_worker.h"
 #include "utils.h"
+#include "debug.h"
 
-RefactoringContext::RefactoringContext(
-    std::unique_ptr<clang::tooling::CompilationDatabase> database)
-    : database(std::move(database))
+using namespace KDevelop;
+
+RefactoringContext::RefactoringContext(KDevRefactorings *parent)
+    : QObject(parent)
 {
+    qRegisterMetaType<std::function<void()>>();
     cache = new DocumentCache(this);
+    m_worker = new Worker(this);
+
+    connect(m_worker, &Worker::taskFinished, this, &RefactoringContext::invokeCallback);
+    // Will not call-back if this RefactoringContext have been destroyed concurrently
+
+    connect(ICore::self()->projectController(), &IProjectController::projectOpened,
+            this, &RefactoringContext::projectOpened);
+    // handle projects() - alread opened projects
+
+    m_worker->start();
+}
+
+KDevRefactorings *RefactoringContext::parent()
+{
+    return static_cast<KDevRefactorings *>(QObject::parent());
 }
 
 llvm::ErrorOr<unsigned> RefactoringContext::offset(const std::string &sourceFile,
                                                    const KTextEditor::Cursor &position) const
 {
     return toOffset(sourceFile, position, cache->refactoringTool(), cache);
+}
+
+void RefactoringContext::projectOpened(IProject *project)
+{
+    Q_ASSERT(project);
+    refactorDebug() << project->name() << "opened";
+    auto projectBuilder = project->buildSystemManager()->builder();
+    // IProjectBuilder declares signal configured(), but is unused...
+
+    // FIXME: configure only when necessary (and always when necessary)
+    auto configureJob = projectBuilder->configure(project);
+    connect(configureJob, &KJob::result, this, [this, project]()
+    {
+        projectConfigured(project);
+    });
+    configureJob->start();
+    // wait for above connection to trigger further actions
+}
+
+void RefactoringContext::projectConfigured(IProject *project)
+{
+    Q_ASSERT(project);
+    refactorDebug() << project->name() << "configured";
+    auto buildSystemManager = project->buildSystemManager();
+    Path buildPath = buildSystemManager->buildDirectory(project->projectItem());
+    refactorDebug() << "build path:" << buildPath;
+
+    // FIXME: do it async (in background)
+    // FIXME: handle non-CMake project
+    QString errorMessage;
+    database = makeCompilationDatabaseFromCMake(buildPath.toLocalFile().toStdString(),
+                                                errorMessage);
+    if (!database) {
+        // TODO: show message for that
+        refactorDebug() << "Cannot create compilation database for" << project->name() << ":" <<
+                        errorMessage;
+        return;
+    }
+    refactorDebug() << "RefactoringsContext sucessfully (re)generated!";
+}
+
+void RefactoringContext::invokeCallback(std::function<void()> callback)
+{
+    callback();
 }

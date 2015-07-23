@@ -19,32 +19,45 @@
     Boston, MA 02110-1301, USA.
 */
 
-// KDevelop
-#include <language/interfaces/editorcontext.h>
+#ifndef KDEV_CLANG_CONTEXTMENUMUTATOR_H
+#define KDEV_CLANG_CONTEXTMENUMUTATOR_H
 
-#include "kdevrefactorings.h"
-#include "refactoringcontext.h"
-#include "refactoringmanager.h"
+// Qt
+#include <QObject>
 
-#include "../clangsupport.h"
+class QAction;
+class QWidget;
 
-
-using namespace KDevelop;
-using namespace Refactorings;
-
-KDevRefactorings::KDevRefactorings(ClangSupport *parent)
-    : QObject(parent)
-    , m_refactoringsContext(new RefactoringContext(this))
-    , m_refactoringManager(new RefactoringManager(this))
+namespace KDevelop
 {
+class ContextMenuExtension;
+
+class EditorContext;
 }
 
-void KDevRefactorings::fillContextMenu(ContextMenuExtension &extension, Context *context)
+class RefactoringManager;
+
+class Refactoring;
+
+class ContextMenuMutator : public QObject
 {
-    if (EditorContext *ctx = dynamic_cast<EditorContext *>(context)) {
-        m_refactoringManager->fillContextMenu(extension, ctx);
-    } else {
-        // I assume the above works anytime we ask for context menu for code
-        Q_ASSERT(!context->hasType(Context::CodeContext));
-    }
-}
+    Q_OBJECT;
+    Q_DISABLE_COPY(ContextMenuMutator);
+public:
+    ContextMenuMutator(KDevelop::ContextMenuExtension &extension, RefactoringManager *parent);
+
+    RefactoringManager *parent();
+
+private:
+    QWidget* menuForWidget(QWidget *widget);
+
+public slots:
+    void endFillingContextMenu(const QVector<Refactoring *> &refactorings);
+
+private:
+    QAction *m_placeholder;
+};
+
+Q_DECLARE_METATYPE(ContextMenuMutator*);
+
+#endif //KDEV_CLANG_CONTEXTMENUMUTATOR_H
