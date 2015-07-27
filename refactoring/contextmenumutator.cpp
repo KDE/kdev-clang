@@ -30,11 +30,18 @@
 #include <interfaces/contextmenuextension.h>
 #include <language/interfaces/editorcontext.h>
 
+// Clang
+#include <clang/Tooling/Core/Replacement.h>
+
 #include "contextmenumutator.h"
 #include "refactoringmanager.h"
 #include "kdevrefactorings.h"
 #include "actionwatcher.h"
+#include "refactoringcontext.h"
+#include "utils.h"
 
+using namespace clang;
+using namespace clang::tooling;
 using namespace KDevelop;
 
 ContextMenuMutator::ContextMenuMutator(ContextMenuExtension &extension, RefactoringManager *parent)
@@ -89,21 +96,23 @@ QWidget *ContextMenuMutator::menuForWidget(QWidget *widget)
 void ContextMenuMutator::endFillingContextMenu(const QVector<Refactoring *> &refactorings)
 {
     QList<QAction *> actions;
-    auto refactoringContext = parent()->parent()->refactoringContext();
+    auto ctx = parent()->parent()->refactoringContext();
     for (auto refactorAction : refactorings) {
         QAction *action = new QAction(refactorAction->name(), parent());
         refactorAction->setParent(action);  // delete as necessary
-        connect(action, &QAction::triggered, [this, refactoringContext, refactorAction]()
+        connect(action, &QAction::triggered, [this, ctx, refactorAction]()
         {
-            // TODO: don't use refactorThis
-            auto changes = Refactorings::refactorThis(refactoringContext, refactorAction,
-                                                      {}, {});
-            // FIXME:
-            // use background thread
-            // ... provided with ability to show GUI
-            // show busy indicator
-
-            changes.applyAllChanges();
+            auto result = refactorAction->invoke(ctx);
+            if (!result) {
+                ctx->reportError(result.getError());
+            }
+            auto changes = toDocumentChangeSet(result.get(), ctx->cache,
+                                               ctx->cache->refactoringTool().getFiles());
+            if (!changes) {
+                ctx->reportError(changes.getError());
+            } else {
+                changes.get().applyAllChanges();
+            }
         });
         actions.push_back(action);
     }

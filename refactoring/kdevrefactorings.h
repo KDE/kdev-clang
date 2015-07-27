@@ -34,7 +34,6 @@
 #include <interfaces/context.h>
 #include <interfaces/iproject.h>
 
-#include "interface.h"
 #include "refactoring.h"
 
 class ClangSupport;

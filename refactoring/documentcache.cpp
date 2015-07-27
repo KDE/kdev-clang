@@ -28,7 +28,6 @@
 
 #include "refactoringcontext.h"
 #include "utils.h"
-#include "interface.h"
 #include "../util/clangdebug.h"
 
 using namespace KDevelop;

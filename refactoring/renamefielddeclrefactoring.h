@@ -39,5 +39,13 @@ private:
     const std::string m_oldQualName;
 };
 
+namespace Refactorings
+{
+namespace RenameFieldDecl
+{
+int run(const std::string oldQualName, const std::string &newName,
+        clang::tooling::RefactoringTool &clangTool);
+}
+}
 
 #endif //KDEV_CLANG_RENAMEFIELDDECLREFACTORING_H

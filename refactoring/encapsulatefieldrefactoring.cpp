@@ -102,12 +102,18 @@ llvm::ErrorOr<clang::tooling::Replacements> EncapsulateFieldRefactoring::invoke(
         return cancelledResult();
     }
 
-    auto &tool = ctx->cache->refactoringTool();
-
-    Refactorings::EncapsulateField::run(tool, m_changePack.get(), &m_declDispatcher,
-                                        &m_recordDeclDispatcher, m_recordName);
-
-    return tool.getReplacements();
+    const ChangePack *changePack = m_changePack.get(); // C++14...
+    auto declDispatcher = m_declDispatcher;
+    auto recordDeclDispatcher = m_recordDeclDispatcher;
+    auto recordName = m_recordName;
+    return ctx->scheduleRefactoring(
+        [changePack, declDispatcher, recordDeclDispatcher, recordName](RefactoringTool &tool)
+        {
+            Refactorings::EncapsulateField::run(tool, changePack, &declDispatcher,
+                                                &recordDeclDispatcher, recordName);
+            return tool.getReplacements();
+        }
+    );
 }
 
 namespace Refactorings

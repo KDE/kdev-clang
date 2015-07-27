@@ -42,5 +42,13 @@ private:
     const std::string m_oldFieldDeclName;
 };
 
+namespace Refactorings
+{
+namespace RenameFieldTuDecl
+{
+int run(const std::string fileName, unsigned fileOffset, const std::string &newName,
+        clang::tooling::RefactoringTool &clangTool);
+}
+}
 
 #endif //KDEV_CLANG_RENAMEFIELDDECLTUREFACTORING_H

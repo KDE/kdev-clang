@@ -22,21 +22,18 @@
 #ifndef KDEV_CLANG_REFACTORING_H
 #define KDEV_CLANG_REFACTORING_H
 
-#include "refactoringinfo.h"
-
 // Qt
 #include <QObject>
-#include <QUrl>
-
-// KF5
-#include <KTextEditor/ktexteditor/cursor.h>
 
 // Clang
 #include <clang/Tooling/Tooling.h>
 #include <clang/Tooling/Core/Replacement.h>
 #include <clang/Tooling/Refactoring.h>
 
-#include "interface.h"
+#include "refactoringinfo.h"
+#include "refactoringcontext.h"
+
+class QDialog;
 
 class DocumentCache;
 
@@ -47,6 +44,10 @@ class Refactoring : public QObject, public RefactoringInfo
 {
     Q_OBJECT;
     Q_DISABLE_COPY(Refactoring);
+
+    friend clang::tooling::Replacements RefactoringContext::scheduleRefactoring(
+        std::function<clang::tooling::Replacements(clang::tooling::RefactoringTool &)>);
+
     // TODO: interface as needed
 public:
     Refactoring(QObject *parent);
@@ -56,6 +57,12 @@ public:
 
 protected:
     static llvm::ErrorOr<clang::tooling::Replacements> cancelledResult();  // Returned on cancel
+    // TODO: Returned on interrupt (implement with care!)
+
+    /// GUI placeholder when refactoring action takes place and UI should be blocked
+    static QDialog *newBusyDialog();
+    static std::function<void(clang::tooling::Replacements)> uiLockerCallback(
+        QDialog *uiLocker, clang::tooling::Replacements &result);
 };
 
 

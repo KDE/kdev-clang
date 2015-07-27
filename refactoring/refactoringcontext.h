@@ -63,10 +63,17 @@ public:
     llvm::ErrorOr<unsigned> offset(const std::string &sourceFile,
                                    const KTextEditor::Cursor &position) const;
 
+    void reportError(const std::error_code &error);
+
     template<typename Task, typename Callback>
     void schedule(Task task, Callback callback);
     template<typename Task, typename Callback>
     void scheduleOnSingleFile(Task task, const std::string &filename, Callback callback);
+    // Convenience method on top of @c schedule
+    clang::tooling::Replacements scheduleRefactoring(
+        std::function<clang::tooling::Replacements(clang::tooling::RefactoringTool &)> task);
+
+    // TODO: schedule refactoring (with ui locker, with Replacements as result)
 
 private: // (slots)
     // Only one project for now
@@ -79,7 +86,7 @@ private slots:
 
 private:
     template<typename Task, typename Callback>
-    static std::function<void(clang::tooling::RefactoringTool &,
+    static std::function<void(clang::tooling::RefactoringTool,
                               std::function<void(std::function<void()>)>)> composeTask(
         Task task, Callback callback);
 
@@ -94,19 +101,19 @@ private:
 Q_DECLARE_METATYPE(std::function<void()>);
 
 template<typename Task, typename Callback>
-std::function<void(clang::tooling::RefactoringTool &,
+std::function<void(clang::tooling::RefactoringTool,
                    std::function<void(std::function<void()>)>)> RefactoringContext::composeTask(
     Task task, Callback callback)
 {
     return [task, callback](
-        clang::tooling::RefactoringTool &tool,
+        clang::tooling::RefactoringTool tool,
         std::function<void(std::function<void()>)> callbackScheduler)
     {
         auto result = task(tool);
         // By value! (TODO C++14: move result to lambda instead of copying)
         auto callbackInvoker = [callback, result]
         {
-            callback(result);
+            callback(std::move(result));
         };
         callbackScheduler(callbackInvoker);
     };

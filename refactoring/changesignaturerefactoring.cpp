@@ -79,7 +79,7 @@ private:
 
 ChangeSignatureRefactoring::ChangeSignatureRefactoring(const FunctionDecl *functionDecl)
     : Refactoring(nullptr)
-      , m_infoPack(InfoPack::fromFunctionDecl(functionDecl))
+    , m_infoPack(InfoPack::fromFunctionDecl(functionDecl))
 {
 }
 
@@ -94,24 +94,39 @@ llvm::ErrorOr<clang::tooling::Replacements> ChangeSignatureRefactoring::invoke(
         return cancelledResult();
     }
 
-    auto &tool = ctx->cache->refactoringTool();
+    auto infoPack = dialog->infoPack(); // C++14...
+    auto changePack = dialog->changePack();
+    return ctx->scheduleRefactoring(
+        [infoPack, changePack](RefactoringTool &tool)
+        {
+            Refactorings::ChangeSignature::run(infoPack, changePack, tool);
+            return tool.getReplacements();
+        }
+    );
+}
 
+namespace Refactorings
+{
+namespace ChangeSignature
+{
+int run(const InfoPack *infoPack, const ChangePack *changePack, RefactoringTool &tool)
+{
     auto declRefExprMatcher = declRefExpr(to(functionDecl())).bind("DeclRefExpr");
     auto memberExprMatcher = memberExpr().bind("MemberExpr");
     auto functionDeclMatcher = functionDecl().bind("FunctionDecl");
     auto functionCallMatcher = callExpr().bind("CallExpr");
 
-    Translator translator(&m_infoPack->declarationComparator(), dialog->infoPack(),
-                          dialog->changePack(), tool.getReplacements());
+    Translator translator(&infoPack->declarationComparator(), infoPack, changePack,
+                          tool.getReplacements());
     MatchFinder finder;
     finder.addMatcher(declRefExprMatcher, &translator);
     finder.addMatcher(memberExprMatcher, &translator);
     finder.addMatcher(functionDeclMatcher, &translator);
     finder.addMatcher(functionCallMatcher, &translator);
 
-    tool.run(newFrontendActionFactory(&finder).get());
-
-    return tool.getReplacements();
+    return tool.run(newFrontendActionFactory(&finder).get());
+}
+}
 }
 
 QString ChangeSignatureRefactoring::name() const

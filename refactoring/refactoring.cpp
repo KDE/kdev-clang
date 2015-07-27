@@ -19,16 +19,51 @@
     Boston, MA 02110-1301, USA.
 */
 
+// Qt
+#include <QDialog>
+#include <QLabel>
+#include <QVBoxLayout>
+
+// KF5
+#include <KLocalizedString>
+
+// Clang
 #include <clang/Tooling/Core/Replacement.h>
 
 #include "refactoring.h"
+
+using namespace clang;
+using namespace clang::tooling;
 
 Refactoring::Refactoring(QObject *parent)
     : QObject(parent)
 {
 }
 
-llvm::ErrorOr<clang::tooling::Replacements> Refactoring::cancelledResult()
+llvm::ErrorOr<Replacements> Refactoring::cancelledResult()
 {
-    return clang::tooling::Replacements{};
+    return Replacements{};
+}
+
+QDialog *Refactoring::newBusyDialog()
+{
+    // Very simple placeholder
+    // TODO: progress bar and cancel button (this is not trivial task!)
+    QDialog *result = new QDialog();
+    QVBoxLayout *layout = new QVBoxLayout();
+    QLabel *label = new QLabel(i18n("Refactoring..."));
+    layout->addWidget(label);
+    result->setLayout(layout);
+    return result;
+}
+
+std::function<void(Replacements)> Refactoring::uiLockerCallback(QDialog *uiLocker,
+                                                                Replacements &result)
+{
+    return [uiLocker, &result](Replacements repl)
+    {
+        result = std::move(repl);
+        uiLocker->accept();
+        // TODO: dialog probably can be closed anyway, detect and clear replacements
+    };
 }

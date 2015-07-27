@@ -48,8 +48,8 @@ class Renamer : public MatchFinder::MatchCallback
 public:
     Renamer(const std::string &oldQualName, const std::string &newName, Replacements &replacements)
         : m_oldQualName(oldQualName)
-          , m_newName(newName)
-          , m_replacements(replacements)
+        , m_newName(newName)
+        , m_replacements(replacements)
     {
     }
 
@@ -74,45 +74,55 @@ private:
 RenameFieldDeclRefactoring::RenameFieldDeclRefactoring(const std::string &oldName,
                                                        std::string oldQualName)
     : Refactoring(nullptr)
-      , m_oldFieldDeclName(oldName)
-      , m_oldQualName(std::move(oldQualName))
+    , m_oldFieldDeclName(oldName)
+    , m_oldQualName(std::move(oldQualName))
 {
 }
 
 llvm::ErrorOr<clang::tooling::Replacements> RenameFieldDeclRefactoring::invoke(
     RefactoringContext *ctx)
 {
-    auto &clangTool = ctx->cache->refactoringTool();
-
     const QString oldName = QString::fromStdString(m_oldFieldDeclName);
     const QString newName = QInputDialog::getText(nullptr, i18n("Rename field"),
                                                   i18n("Type new name of field"),
                                                   QLineEdit::Normal,
                                                   oldName);
     if (newName.isEmpty() || newName == oldName) {
-        return clangTool.getReplacements();
+        return cancelledResult();
     }
 
-    refactorDebug() << "Will rename" << m_oldFieldDeclName << "to:" << newName;
+    auto newNameS = newName.toStdString(); // C++14...
+    auto oldQualName = m_oldQualName;
+    return ctx->scheduleRefactoring(
+        [oldQualName, newNameS](RefactoringTool &tool)
+        {
+            Refactorings::RenameFieldDecl::run(oldQualName, newNameS, tool);
+            return tool.getReplacements();
+        });
+}
 
+namespace Refactorings
+{
+namespace RenameFieldDecl
+{
+int run(const std::string oldQualName, const std::string &newName, RefactoringTool &clangTool)
+{
     auto memberExprMatcher = memberExpr().bind("MemberExpr");
     auto fieldDeclMatcher = fieldDecl().bind("FieldDecl");
 
-    Renamer renamer(m_oldQualName, newName.toStdString(), clangTool.getReplacements());
+    Renamer renamer(oldQualName, newName, clangTool.getReplacements());
     MatchFinder finder;
     finder.addMatcher(memberExprMatcher, &renamer);
     finder.addMatcher(fieldDeclMatcher, &renamer);
 
-    clangTool.run(tooling::newFrontendActionFactory(&finder).get());
-
-    auto result = clangTool.getReplacements();
-    clangTool.getReplacements().clear();
-    return result;
+    return clangTool.run(tooling::newFrontendActionFactory(&finder).get());
+}
+}
 }
 
 QString RenameFieldDeclRefactoring::name() const
 {
-    return i18n("rename %1").arg(QString::fromStdString(m_oldQualName));
+    return i18n("rename [%1]").arg(QString::fromStdString(m_oldQualName));
 }
 
 void Renamer::run(const MatchFinder::MatchResult &result)

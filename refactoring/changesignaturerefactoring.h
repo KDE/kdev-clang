@@ -48,5 +48,16 @@ private:
     std::unique_ptr<const InfoPack> m_infoPack;
 };
 
+namespace Refactorings
+{
+namespace ChangeSignature
+{
+using InfoPack = ChangeSignatureRefactoring::InfoPack;
+using ChangePack = ChangeSignatureRefactoring::ChangePack;
+
+int run(const InfoPack *infoPack, const ChangePack *changePack,
+        clang::tooling::RefactoringTool &tool);
+}
+}
 
 #endif //KDEV_CLANG_CHANGESIGNATUREREFACTORING_H

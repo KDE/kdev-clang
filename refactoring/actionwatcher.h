@@ -19,31 +19,31 @@
     Boston, MA 02110-1301, USA.
 */
 
-// KDevelop
-#include <language/interfaces/editorcontext.h>
+#ifndef KDEV_CLANG_QACTIONWATCHER_H
+#define KDEV_CLANG_QACTIONWATCHER_H
 
-#include "kdevrefactorings.h"
-#include "refactoringcontext.h"
-#include "refactoringmanager.h"
+#include <QObject>
 
-#include "../clangsupport.h"
+class QAction;
 
-
-using namespace KDevelop;
-
-KDevRefactorings::KDevRefactorings(ClangSupport *parent)
-    : QObject(parent)
-    , m_refactoringsContext(new RefactoringContext(this))
-    , m_refactoringManager(new RefactoringManager(this))
+/**
+ * Watches associated widgets and deletes action when last associated widget is destroyed
+ */
+class ActionWatcher : public QObject
 {
-}
+    Q_OBJECT;
+    Q_DISABLE_COPY(ActionWatcher);
+public:
+    ActionWatcher(QAction *action);
 
-void KDevRefactorings::fillContextMenu(ContextMenuExtension &extension, Context *context)
-{
-    if (EditorContext *ctx = dynamic_cast<EditorContext *>(context)) {
-        m_refactoringManager->fillContextMenu(extension, ctx);
-    } else {
-        // I assume the above works anytime we ask for context menu for code
-        Q_ASSERT(!context->hasType(Context::CodeContext));
-    }
-}
+private:
+    QAction *parent();
+    void decreaseCount();
+    void registerAssociatedWidgets();
+
+private:
+    int m_count;
+};
+
+
+#endif //KDEV_CLANG_QACTIONWATCHER_H

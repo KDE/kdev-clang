@@ -50,9 +50,9 @@ public:
     Renamer(const std::string &fileName, unsigned offset, const std::string &newName,
             Replacements &replacements)
         : m_fileName(fileName)
-          , m_fileOffset(offset)
-          , m_newName(newName)
-          , m_replacements(replacements)
+        , m_fileOffset(offset)
+        , m_newName(newName)
+        , m_replacements(replacements)
     {
     }
 
@@ -79,46 +79,59 @@ RenameFieldDeclTURefactoring::RenameFieldDeclTURefactoring(const std::string &fi
                                                            unsigned offset,
                                                            llvm::StringRef oldName)
     : Refactoring(nullptr)
-      , m_fileName(fileName)
-      , m_fileOffset(offset)
-      , m_oldFieldDeclName(oldName)
+    , m_fileName(fileName)
+    , m_fileOffset(offset)
+    , m_oldFieldDeclName(oldName)
 {
 }
 
 llvm::ErrorOr<clang::tooling::Replacements> RenameFieldDeclTURefactoring::invoke(
     RefactoringContext *ctx)
 {
-    auto &clangTool = ctx->cache->refactoringTool();
-
     const QString oldName = QString::fromStdString(m_oldFieldDeclName);
     const QString newName = QInputDialog::getText(nullptr, i18n("Rename field"),
                                                   i18n("Type new name of field"),
                                                   QLineEdit::Normal,
                                                   oldName);
     if (newName.isEmpty() || newName == oldName) {
-        return clangTool.getReplacements();
+        return cancelledResult();
     }
 
-    refactorDebug() << "Will rename" << m_oldFieldDeclName << "to:" << newName;
+    auto fileName = m_fileName; // C++14...
+    auto fileOffset = m_fileOffset;
+    auto newNameS = newName.toStdString();
+    return ctx->scheduleRefactoring(
+        [fileName, fileOffset, newNameS](RefactoringTool &tool)
+        {
+            Refactorings::RenameFieldTuDecl::run(fileName, fileOffset, newNameS, tool);
+            return tool.getReplacements();
+        }
+    );
+}
 
+namespace Refactorings
+{
+namespace RenameFieldTuDecl
+{
+int run(const std::string fileName, unsigned fileOffset, const std::string &newName,
+        clang::tooling::RefactoringTool &clangTool)
+{
     auto memberExprMatcher = memberExpr().bind("MemberExpr");
     auto fieldDeclMatcher = fieldDecl().bind("FieldDecl");
 
-    Renamer renamer(m_fileName, m_fileOffset, newName.toStdString(), clangTool.getReplacements());
+    Renamer renamer(fileName, fileOffset, newName, clangTool.getReplacements());
     MatchFinder finder;
     finder.addMatcher(memberExprMatcher, &renamer);
     finder.addMatcher(fieldDeclMatcher, &renamer);
 
-    clangTool.run(tooling::newFrontendActionFactory(&finder).get());
-
-    auto result = clangTool.getReplacements();
-    clangTool.getReplacements().clear();
-    return result;
+    return clangTool.run(tooling::newFrontendActionFactory(&finder).get());
+}
+}
 }
 
 QString RenameFieldDeclTURefactoring::name() const
 {
-    return i18n("rename %1").arg(QString::fromStdString(m_oldFieldDeclName));
+    return i18n("rename [%1]").arg(QString::fromStdString(m_oldFieldDeclName));
 }
 
 void Renamer::run(const MatchFinder::MatchResult &result)

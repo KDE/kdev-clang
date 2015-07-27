@@ -2,7 +2,6 @@
 set(CMAKE_AUTOUIC ON)
 
 set(SRCS
-    interface.cpp
     utils.cpp
     documentcache.cpp
     refactoring.cpp

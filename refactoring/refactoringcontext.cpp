@@ -19,8 +19,12 @@
     Boston, MA 02110-1301, USA.
 */
 
+// Qt
+#include <QMessageBox>
+
 // KF5
 #include <KJob>
+#include <KLocalizedString>
 
 // KDevelop
 #include <interfaces/icore.h>
@@ -38,6 +42,8 @@
 #include "debug.h"
 
 using namespace KDevelop;
+using namespace clang;
+using namespace clang::tooling;
 
 RefactoringContext::RefactoringContext(KDevRefactorings *parent)
     : QObject(parent)
@@ -65,6 +71,11 @@ llvm::ErrorOr<unsigned> RefactoringContext::offset(const std::string &sourceFile
                                                    const KTextEditor::Cursor &position) const
 {
     return toOffset(sourceFile, position, cache->refactoringTool(), cache);
+}
+
+void RefactoringContext::reportError(const std::error_code &error)
+{
+    QMessageBox::critical(nullptr, i18n("Error occurred"), QString::fromStdString(error.message()));
 }
 
 void RefactoringContext::projectOpened(IProject *project)
@@ -104,6 +115,16 @@ void RefactoringContext::projectConfigured(IProject *project)
         return;
     }
     refactorDebug() << "RefactoringsContext sucessfully (re)generated!";
+}
+
+Replacements RefactoringContext::scheduleRefactoring(
+    std::function<Replacements(RefactoringTool &)> task)
+{
+    QDialog *uiLocker = Refactoring::newBusyDialog();
+    Replacements result;
+    schedule(task, Refactoring::uiLockerCallback(uiLocker, result));
+    uiLocker->exec();
+    return result;
 }
 
 void RefactoringContext::invokeCallback(std::function<void()> callback)

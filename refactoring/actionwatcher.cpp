@@ -19,31 +19,40 @@
     Boston, MA 02110-1301, USA.
 */
 
-// KDevelop
-#include <language/interfaces/editorcontext.h>
+#include <QAction>
 
-#include "kdevrefactorings.h"
-#include "refactoringcontext.h"
-#include "refactoringmanager.h"
+#include "actionwatcher.h"
+#include "debug.h"
 
-#include "../clangsupport.h"
-
-
-using namespace KDevelop;
-
-KDevRefactorings::KDevRefactorings(ClangSupport *parent)
-    : QObject(parent)
-    , m_refactoringsContext(new RefactoringContext(this))
-    , m_refactoringManager(new RefactoringManager(this))
+ActionWatcher::ActionWatcher(QAction *action)
+    : QObject(action)
 {
+    registerAssociatedWidgets();
 }
 
-void KDevRefactorings::fillContextMenu(ContextMenuExtension &extension, Context *context)
+QAction *ActionWatcher::parent()
 {
-    if (EditorContext *ctx = dynamic_cast<EditorContext *>(context)) {
-        m_refactoringManager->fillContextMenu(extension, ctx);
+    return static_cast<QAction *>(QObject::parent());
+}
+
+void ActionWatcher::decreaseCount()
+{
+    m_count--;
+    if (m_count == 0) {
+        registerAssociatedWidgets();
+    }
+}
+
+void ActionWatcher::registerAssociatedWidgets()
+{
+    // Consider watching for ActionEvents - action may be removed from widget before destruction
+    const auto &widgets = parent()->associatedWidgets();
+    m_count = widgets.count();
+    if (m_count == 0) {
+        parent()->deleteLater();
     } else {
-        // I assume the above works anytime we ask for context menu for code
-        Q_ASSERT(!context->hasType(Context::CodeContext));
+        for (QWidget *w : widgets) {
+            connect(w, &QObject::destroyed, this, &ActionWatcher::decreaseCount);
+        }
     }
 }

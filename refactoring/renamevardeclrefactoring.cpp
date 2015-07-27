@@ -19,8 +19,6 @@
     Boston, MA 02110-1301, USA.
 */
 
-#include "renamevardeclrefactoring.h"
-
 // Qt
 #include <QInputDialog>
 
@@ -33,6 +31,7 @@
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <refactoringcontext.h>
 
+#include "renamevardeclrefactoring.h"
 #include "documentcache.h"
 #include "declarationcomparator.h"
 #include "tudecldispatcher.h"
@@ -54,8 +53,8 @@ public:
     Renamer(const DeclarationComparator *declComparator, const string &newName,
             Replacements &replacements)
         : m_declDispatcher(declComparator)
-          , m_newName(newName)
-          , m_replacements(replacements)
+        , m_newName(newName)
+        , m_replacements(replacements)
     {
     }
 
@@ -76,32 +75,31 @@ private:
 RenameVarDeclRefactoring::RenameVarDeclRefactoring(unique_ptr<DeclarationComparator> declComparator,
                                                    const string &declName, QObject *parent)
     : Refactoring(parent)
-      , m_declComparator(std::move(declComparator))
-      , m_oldVarDeclName(declName)
+    , m_declComparator(std::move(declComparator))
+    , m_oldVarDeclName(declName)
 {
 }
 
-llvm::ErrorOr<clang::tooling::Replacements> RenameVarDeclRefactoring::invoke(
+llvm::ErrorOr<Replacements> RenameVarDeclRefactoring::invoke(
     RefactoringContext *ctx)
 {
-    auto &clangTool = ctx->cache->refactoringTool();
-
     const QString oldName = QString::fromStdString(m_oldVarDeclName);
     const QString newName = QInputDialog::getText(nullptr, i18n("Rename variable"),
                                                   i18n("Type new name of variable"),
                                                   QLineEdit::Normal,
                                                   oldName);
     if (newName.isEmpty() || newName == oldName) {
-        return clangTool.getReplacements();
+        return cancelledResult();
     }
 
-    refactorDebug() << "Will rename" << m_oldVarDeclName << "to:" << newName;
-
-    Refactorings::RenameVarDecl::run(m_declComparator.get(), newName.toStdString(), clangTool);
-
-    auto result = clangTool.getReplacements();
-    clangTool.getReplacements().clear();
-    return result;
+    auto declCmp = m_declComparator.get();
+    auto name = newName.toStdString();
+    return ctx->scheduleRefactoring(
+        [declCmp, name](RefactoringTool &tool)
+        {
+            Refactorings::RenameVarDecl::run(declCmp, name, tool);
+            return tool.getReplacements();
+        });
 }
 
 namespace Refactorings
