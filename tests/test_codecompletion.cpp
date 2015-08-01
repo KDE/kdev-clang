@@ -30,6 +30,7 @@
 #include "util/clangtypes.h"
 
 #include <language/codecompletion/codecompletiontesthelper.h>
+#include <language/duchain/types/functiontype.h>
 
 #include "codecompletion/completionhelper.h"
 #include "codecompletion/context.h"
@@ -59,7 +60,7 @@ struct CompletionItems {
     {};
     KTextEditor::Cursor position;
     QStringList completions;
-    QStringList declarationItems; // completion items that have associated declarations
+    QStringList declarationItems; ///< completion items that have associated declarations. Declarations with higher match quality at the top. @sa KTextEditor::CodeCompletionModel::MatchQuality
 };
 Q_DECLARE_TYPEINFO(CompletionItems, Q_MOVABLE_TYPE);
 Q_DECLARE_METATYPE(CompletionItems);
@@ -104,11 +105,15 @@ void executeCompletionTest(const QString& code, const CompletionItems& expectedC
     lock.lock();
     auto tester = ClangCodeCompletionItemTester(QExplicitlySharedDataPointer<ClangCodeCompletionContext>(context));
 
-
+    int previousMatchQuality = 10;
     for(const auto& declarationName : expectedCompletionItems.declarationItems){
         const auto declarationItem = tester.findItem(declarationName);
         QVERIFY(declarationItem);
         QVERIFY(declarationItem->declaration());
+
+        auto matchQuality = tester.itemData(declarationItem, KTextEditor::CodeCompletionModel::Name, KTextEditor::CodeCompletionModel::MatchQuality).toInt();
+        QVERIFY(matchQuality <= previousMatchQuality);
+        previousMatchQuality = matchQuality;
     }
 
     tester.names.sort();
@@ -175,19 +180,16 @@ void TestCodeCompletion::testClangCodeCompletion_data()
             "foo",
         }, {"bar","foo"}};
     QTest::newRow("dotmemberaccess")
-        << "class Foo { public: void foo() {} }; int main() { Foo f; \nf. "
+        << "class Foo { public: void foo() {} bool operator=(Foo &&) }; int main() { Foo f; \nf. "
         << CompletionItems{{1, 2}, {
-            "foo()",
-            "operator=(Foo &&)",
-            "operator=(const Foo &)",
-        }, {"foo()"}};
+            "foo",
+            "operator="
+        }, {"foo",  "operator="}};
     QTest::newRow("arrowmemberaccess")
         << "class Foo { public: void foo() {} }; int main() { Foo* f = new Foo; \nf-> }"
         << CompletionItems{{1, 3}, {
-            "foo()",
-            "operator=(Foo &&)",
-            "operator=(const Foo &)",
-        }, {"foo()"}};
+            "foo"
+        }, {"foo"}};
     QTest::newRow("enum-case")
         << "enum Foo { foo, bar }; int main() { Foo f; switch (f) {\ncase "
         << CompletionItems{{1,4}, {
@@ -198,44 +200,36 @@ void TestCodeCompletion::testClangCodeCompletion_data()
         << "class SomeStruct { private: void priv() {} };\n"
            "int main() { SomeStruct s;\ns. "
         << CompletionItems{{2, 2}, {
-            "operator=(SomeStruct &&)",
-            "operator=(const SomeStruct &)",
         }};
     QTest::newRow("private-friend")
         << "class SomeStruct { private: void priv() {} friend int main(); };\n"
            "int main() { SomeStruct s;\ns. "
         << CompletionItems{{2, 2}, {
-            "operator=(SomeStruct &&)",
-            "operator=(const SomeStruct &)",
-            "priv()",
-        }, {"priv()"}};
+            "priv",
+        }, {"priv"}};
     QTest::newRow("private-public")
         << "class SomeStruct { public: void pub() {} private: void priv() {} };\n"
            "int main() { SomeStruct s;\ns. "
         << CompletionItems{{2, 2}, {
-            "operator=(SomeStruct &&)",
-            "operator=(const SomeStruct &)",
-            "pub()",
-        }, {"pub()"}};
+            "pub",
+        }, {"pub"}};
     QTest::newRow("protected-public")
         << "class SomeStruct { public: void pub() {} protected: void prot() {} };\n"
            "int main() { SomeStruct s;\ns. "
         << CompletionItems{{2, 2}, {
-            "operator=(SomeStruct &&)",
-            "operator=(const SomeStruct &)",
-            "pub()",
-        }, {"pub()"}};
+            "pub",
+        }, {"pub"}};
     QTest::newRow("localVariable")
         << "int main() { int localVariable;\nloc "
         << CompletionItems{{1, 3},
-            {"localVariable","main()"},
-            {"localVariable", "main()"}
+            {"localVariable","main"},
+            {"localVariable", "main"}
         };
     QTest::newRow("globalVariable")
         << "int globalVariable;\nint main() { \ngl "
         << CompletionItems{{2, 2},
-            {"globalVariable","main()"},
-            {"globalVariable", "main()"}
+            {"globalVariable","main"},
+            {"globalVariable", "main"}
         };
     QTest::newRow("namespaceVariable")
         << "namespace NameSpace{int variable};\nint main() { \nNameSpace:: "
@@ -246,9 +240,21 @@ void TestCodeCompletion::testClangCodeCompletion_data()
     QTest::newRow("parentVariable")
         << "class A{public: int m_variable;};class B : public A{};\nint main() { B b;\nb. "
         << CompletionItems{{2, 2},
-            {"m_variable", "operator=(A &&)", "operator=(B &&)", "operator=(const A &)", "operator=(const B &)"},
+            {"m_variable"},
             {"m_variable"}
         };
+    QTest::newRow("itemsPriority")
+        << "class A; class B; void f(A); int main(){ A c; B b;f(\n} "
+        << CompletionItems{{1, 0},
+            {"A", "B", "b", "c", "f", "main"},
+            {"c", "A", "b", "B"}
+    };
+    QTest::newRow("function-arguments")
+        << "class Abc; int f(Abc){\n "
+        << CompletionItems{{1, 0}, {
+            "Abc",
+            "f",
+        }};
 }
 
 void TestCodeCompletion::testVirtualOverride()
@@ -265,41 +271,41 @@ void TestCodeCompletion::testVirtualOverride_data()
     QTest::addColumn<CompletionItems>("expectedItems");
 
     QTest::newRow("basic")
-        <<  "class Foo { virtual void foo(); virtual char foo(char c, int i, double d); };\n"
-            "class Bar : Foo \n{\n}"
+        <<  "class Foo { virtual void foo(); virtual void foo(char c); virtual char foo(char c, int i, double d); };\n"
+            "class Bar : Foo \n{void foo(char c) override;\n}"
         << CompletionItems{{3, 1}, {"foo()", "foo(char c, int i, double d)"}};
 
     QTest::newRow("template")
-        << "template<class T1, class T2> class Foo { virtual T2 foo(T1 a, T2 b, int i); } ;\n"
-           "class Bar : Foo<char, double> \n{\n}"
+        << "template<class T1, class T2> class Foo { virtual T2 foo(T1 a, T2 b, int i); virtual T2 overridden(T1 a); } ;\n"
+           "class Bar : Foo<char, double> \n{double overridden(char a) override;\n}"
         << CompletionItems{{3, 1}, {"foo(char a, double b, int i)"}};
 
     QTest::newRow("nested-template")
-        << "template<class T1, class T2> class Foo { virtual T2 foo(T1 a, T2 b, int i); } ;\n"
+        << "template<class T1, class T2> class Foo { virtual T2 foo(T1 a, T2 b, int i); virtual T2 overridden(T1 a, T2 b, int i); } ;\n"
            "template<class T1, class T2> class Baz { };\n"
-           "class Bar : Foo<char, Baz<char, double>> \n{\n}"
+           "class Bar : Foo<char, Baz<char, double>> \n{Baz<char, double> overridden(char a, Baz<char, double> b, int i) override;\n}"
         << CompletionItems{{4, 1}, {"foo(char a, Baz<char, double> b, int i)"}};
 
     QTest::newRow("multi")
-        << "class Foo { virtual int foo(int i); };\n"
+        << "class Foo { virtual int foo(int i); virtual int overridden(int i); };\n"
            "class Baz { virtual char baz(char c); };\n"
-           "class Bar : Foo, Baz \n{\n}"
+           "class Bar : Foo, Baz \n{int overridden(int i) override;\n}"
         << CompletionItems{{4, 1}, {"baz(char c)", "foo(int i)"}};
 
     QTest::newRow("deep")
-        << "class Foo { virtual int foo(int i); };\n"
+        << "class Foo { virtual int foo(int i); virtual int overridden(int i); };\n"
            "class Baz : Foo { };\n"
-           "class Bar : Baz \n{\n}"
+           "class Bar : Baz \n{int overridden(int i) overriden;\n}"
         << CompletionItems{{4, 1}, {"foo(int i)"}};
 
     QTest::newRow("pure")
-        << "class Foo { virtual void foo() = 0; foo() {} };\n"
-           "class Bar : Foo \n{\n}"
-        << CompletionItems{{3, 1}, {"foo() = 0"}};
+        << "class Foo { virtual void foo() = 0; virtual void overridden() = 0;};\n"
+           "class Bar : Foo \n{void overridden() override;\n};"
+        << CompletionItems{{3, 0}, {"foo() = 0"}};
 
     QTest::newRow("const")
-        << "class Foo { virtual void foo(const int b) const; }\n;"
-           "class Bar : Foo \n{\n}"
+        << "class Foo { virtual void foo(const int b) const; virtual void overridden(const int b) const; }\n;"
+           "class Bar : Foo \n{void overridden(const int b) const override;\n}"
         << CompletionItems{{3, 1}, {"foo(const int b) const"}};
 }
 
@@ -553,4 +559,36 @@ void TestCodeCompletion::testIncludePathCompletionLocal()
     IncludeTester tester(executeIncludePathCompletion(&impl, {0, 10}));
     QVERIFY(tester.names.contains(header.url().toUrl().fileName()));
     QVERIFY(!tester.names.contains("iostream"));
+}
+
+void TestCodeCompletion::testOverloadedFunctions()
+{
+    TestFile file("void f(); int f(int); void f(int, double){\n ", "cpp");
+    QVERIFY(file.parseAndWait(TopDUContext::AllDeclarationsContextsUsesAndAST));
+    DUChainReadLocker lock;
+    auto top = file.topContext();
+    QVERIFY(top);
+    const ParseSessionData::Ptr sessionData(dynamic_cast<ParseSessionData*>(top->ast().data()));
+    QVERIFY(sessionData);
+
+    DUContextPointer topPtr(top);
+    lock.unlock();
+
+    const auto context = new ClangCodeCompletionContext(topPtr, sessionData, file.url().toUrl(), {1, 0}, QString());
+    context->setFilters(ClangCodeCompletionContext::ContextFilters(
+                            ClangCodeCompletionContext::NoBuiltins |
+                            ClangCodeCompletionContext::NoMacros));
+    lock.lock();
+    const auto tester = ClangCodeCompletionItemTester(QExplicitlySharedDataPointer<ClangCodeCompletionContext>(context));
+    QCOMPARE(tester.items.size(), 3);
+    for (const auto& item : tester.items) {
+        auto function = item->declaration()->type<FunctionType>();
+        const QString display = item->declaration()->identifier().toString() + function->partToString(FunctionType::SignatureArguments);
+        const QString itemDisplay = tester.itemData(item).toString() + tester.itemData(item, KTextEditor:: CodeCompletionModel::Arguments).toString();
+        QCOMPARE(display, itemDisplay);
+    }
+
+    QVERIFY(tester.items[0]->declaration().data() != tester.items[1]->declaration().data());
+    QVERIFY(tester.items[0]->declaration().data() != tester.items[2]->declaration().data());
+    QVERIFY(tester.items[1]->declaration().data() != tester.items[2]->declaration().data());
 }

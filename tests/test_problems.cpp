@@ -136,10 +136,12 @@ void TestProblems::testChildDiagnostics()
     QCOMPARE(range.start(), KTextEditor::Cursor(2, 13));
     QCOMPARE(range.end(), KTextEditor::Cursor(2, 16));
     QCOMPARE(problems[0]->diagnostics().size(), 2);
-    const ProblemPointer d1 = problems[0]->diagnostics()[0];
+    IProblem::Ptr p1 = problems[0]->diagnostics()[0];
+    const ProblemPointer d1 = ProblemPointer(dynamic_cast<Problem*>(p1.data()));
     QCOMPARE(d1->url().str(), FileName);
     QCOMPARE(d1->rangeInCurrentRevision().start(), KTextEditor::Cursor(0, 5));
-    const ProblemPointer d2 = problems[0]->diagnostics()[1];
+    IProblem::Ptr p2 = problems[0]->diagnostics()[1];
+    const ProblemPointer d2 = ProblemPointer(dynamic_cast<Problem*>(p2.data()));
     QCOMPARE(d2->url().str(), FileName);
     QCOMPARE(d2->rangeInCurrentRevision().start(), KTextEditor::Cursor(1, 5));
 }
@@ -316,4 +318,29 @@ void TestProblems::testTodoProblems_data()
     QTest::newRow("non-ascii-todo")
         << "/* TODO: 例えば */"
         << ExpectedTodos{{"TODO: 例えば", {0, 3}, {0, 12}}};
+}
+
+void TestProblems::testRanges()
+{
+    // expected:
+    // test.cpp:4:1: error: C++ requires a type specifier for all declarations
+    // operator[](int){return string;}
+    // ^
+    //
+    // test.cpp:4:24: error: 'string' does not refer to a value
+    // operator[](int){return string;}
+    //                        ^
+    const QByteArray code = "struct string{};\nclass Test{\npublic:\noperator[](int){return string;}\n};";
+
+    auto problems = parse(code);
+    QCOMPARE(problems.size(), 2);
+    QVERIFY(problems[0]->diagnostics().isEmpty());
+    auto range = problems[0]->rangeInCurrentRevision();
+    QCOMPARE(range.start(), KTextEditor::Cursor(3, 0));
+    // Different versions of Clang provide different ranges...
+    // QCOMPARE(range.end(), KTextEditor::Cursor(3, 0));
+
+    range = problems[1]->rangeInCurrentRevision();
+    QCOMPARE(range.start(), KTextEditor::Cursor(3, 23));
+    QCOMPARE(range.end(), KTextEditor::Cursor(3, 23));
 }

@@ -170,7 +170,7 @@ ParseSessionData::ParseSessionData(const QVector<UnsavedFile>& unsavedFiles, Cla
 
 #if CINDEX_VERSION_MINOR >= 23
     const CXErrorCode code = clang_parseTranslationUnit2(
-        index->index(), tuUrl.byteArray(),
+        index->index(), tuUrl.byteArray().constData(),
         args.constData(), args.size(),
         unsaved.data(), unsaved.size(),
         flags,
@@ -181,7 +181,7 @@ ParseSessionData::ParseSessionData(const QVector<UnsavedFile>& unsavedFiles, Cla
     }
 #else
     m_unit = clang_parseTranslationUnit(
-        index->index(), tuUrl.byteArray(),
+        index->index(), tuUrl.byteArray().constData(),
         args.constData(), args.size(),
         unsaved.data(), unsaved.size(),
         flags
@@ -193,7 +193,7 @@ ParseSessionData::ParseSessionData(const QVector<UnsavedFile>& unsavedFiles, Cla
         m_environment = environment;
 
         if (options.testFlag(PrecompiledHeader)) {
-            clang_saveTranslationUnit(m_unit, tuUrl.byteArray() + ".pch", CXSaveTranslationUnit_None);
+            clang_saveTranslationUnit(m_unit, (tuUrl.byteArray() + ".pch").constData(), CXSaveTranslationUnit_None);
         }
     } else {
         clangDebug() << "Failed to parse translation unit:" << tuUrl;
@@ -212,6 +212,11 @@ void ParseSessionData::setUnit(CXTranslationUnit unit)
     m_unit = unit;
     const ClangString unitFile(clang_getTranslationUnitSpelling(unit));
     m_file = clang_getFile(m_unit, unitFile.c_str());
+}
+
+ClangParsingEnvironment ParseSessionData::environment() const
+{
+    return m_environment;
 }
 
 ParseSession::ParseSession(const ParseSessionData::Ptr& data)
@@ -303,12 +308,12 @@ QList<ProblemPointer> ParseSession::problemsForFile(CXFile file) const
         && !clang_Location_isInSystemHeader(clang_getLocationForOffset(d->m_unit, file, 0)))
     {
         ProblemPointer problem(new Problem);
-        problem->setSeverity(ProblemData::Warning);
+        problem->setSeverity(IProblem::Warning);
         problem->setDescription(i18n("Header is not guarded against multiple inclusions"));
         problem->setExplanation(i18n("The given header is not guarded against multiple inclusions, "
             "either with the conventional #ifndef/#define/#endif macro guards or with #pragma once."));
         problem->setFinalLocation({indexedPath, KTextEditor::Range()});
-        problem->setSource(ProblemData::Preprocessor);
+        problem->setSource(IProblem::Preprocessor);
         problems << problem;
         // TODO: Easy to add an assistant here that adds the guards -- any takers?
     }

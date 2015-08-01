@@ -273,12 +273,6 @@ struct Visitor
     }
 
 //BEGIN dispatch*
-    template<CXCursorKind CK, EnableIf<CursorKindTraits::isUse(CK)> = dummy>
-    CXChildVisitResult dispatchCursor(CXCursor cursor);
-
-    template<CXCursorKind CK, EnableIf<CK == CXCursor_CompoundStmt> = dummy>
-    CXChildVisitResult dispatchCursor(CXCursor cursor);
-
     template<CXCursorKind CK,
       Decision IsInClass = CursorKindTraits::isInClass(CK),
       EnableIf<IsInClass == Decision::Maybe> = dummy>
@@ -311,8 +305,12 @@ struct Visitor
     template<CXCursorKind CK, class DeclType, bool hasContext>
     CXChildVisitResult buildDeclaration(CXCursor cursor);
 
-    template<CXCursorKind CK>
     CXChildVisitResult buildUse(CXCursor cursor);
+    CXChildVisitResult buildMacroExpansion(CXCursor cursor);
+    CXChildVisitResult buildCompoundStatement(CXCursor cursor);
+    CXChildVisitResult buildCXXBaseSpecifier(CXCursor cursor);
+    CXChildVisitResult buildParmDecl(CXCursor cursor);
+
 //END build*
 
 //BEGIN create*
@@ -331,7 +329,7 @@ struct Visitor
             clang_getSpellingLocation(spellingLocation, nullptr, nullptr, nullptr, &spellingLocOffset);
             // Set empty ranges for declarations inside macro expansion
             if (spellingLocOffset == expansionLocOffset) {
-                range.end.column = range.start.column;
+                range.end = range.start;
             }
         }
 
@@ -456,7 +454,15 @@ struct Visitor
         for (int i = 0; i < numArgs; ++i) {
             func->addArgument(makeAbsType(clang_getArgType(type, i), parent));
         }
-        /// TODO: variadic functions
+
+        if (clang_isFunctionTypeVariadic(type)) {
+            auto type = new DelayedType;
+            static const auto id = IndexedTypeIdentifier("...");
+            type->setIdentifier(id);
+            type->setKind(DelayedType::Unresolved);
+            func->addArgument(AbstractType::Ptr(type));
+        }
+
         return func;
     }
 
@@ -556,7 +562,16 @@ struct Visitor
         return makeType(clangType, cursor);
     }
 
-    template<CXCursorKind CK, EnableIf<!CursorKindTraits::isIdentifiedType(CK) && CK != CXCursor_FunctionDecl> = dummy>
+    template<CXCursorKind CK, EnableIf<CK == CXCursor_LabelStmt> = dummy>
+    AbstractType *createType(CXCursor)
+    {
+        auto t = new DelayedType;
+        static const IndexedTypeIdentifier id("Label");
+        t->setIdentifier(id);
+        return t;
+    }
+
+    template<CXCursorKind CK, EnableIf<!CursorKindTraits::isIdentifiedType(CK) && CK != CXCursor_FunctionDecl && CK != CXCursor_LabelStmt> = dummy>
     AbstractType *createType(CXCursor cursor)
     {
         auto clangType = clang_getCursorType(cursor);
@@ -707,26 +722,6 @@ void Visitor::setTypeModifiers(CXType type, AbstractType* kdevType) const
 
 //BEGIN dispatchCursor
 
-template<CXCursorKind CK, EnableIf<CursorKindTraits::isUse(CK)>>
-CXChildVisitResult Visitor::dispatchCursor(CXCursor cursor)
-{
-    return buildUse<CK>(cursor);
-}
-
-template<CXCursorKind CK, EnableIf<CK == CXCursor_CompoundStmt>>
-CXChildVisitResult Visitor::dispatchCursor(CXCursor cursor)
-{
-    if (m_parentContext->context->type() == DUContext::Function)
-    {
-        auto context = createContext<CK, DUContext::Other>(cursor);
-        CurrentContext newParent(context);
-        PushValue<CurrentContext*> pushCurrent(m_parentContext, &newParent);
-        clang_visitChildren(cursor, &visitCursor, this);
-        return CXChildVisit_Continue;
-    }
-    return CXChildVisit_Recurse;
-}
-
 template<CXCursorKind CK, Decision IsInClass,
          EnableIf<IsInClass == Decision::Maybe>>
 CXChildVisitResult Visitor::dispatchCursor(CXCursor cursor, CXCursor parent)
@@ -769,30 +764,6 @@ CXChildVisitResult Visitor::dispatchCursor(CXCursor cursor, CXCursor parent)
     return buildDeclaration<CK, typename DeclType<CK, isDefinition, isClassMember>::Type, hasContext>(cursor);
 }
 
-template<>
-CXChildVisitResult Visitor::dispatchCursor<CXCursor_CXXBaseSpecifier>(CXCursor cursor)
-{
-    auto currentContext = m_parentContext->context;
-
-    bool virtualInherited = clang_isVirtualBase(cursor);
-    Declaration::AccessPolicy access = CursorKindTraits::kdevAccessPolicy(clang_getCXXAccessSpecifier(cursor));
-
-    auto classDeclCursor = clang_getCursorReferenced(cursor);
-    auto decl = findDeclaration(classDeclCursor);
-    if (!decl) {
-        // this happens for templates with template-dependent base classes e.g. - dunno whether we can/should do more here
-        clangDebug() << "failed to find declaration for base specifier:" << ClangString(clang_getCursorDisplayName(cursor));
-        return CXChildVisit_Recurse;
-    }
-
-    DUChainWriteLocker lock;
-    contextImportDecl(currentContext, decl);
-    auto classDecl = dynamic_cast<ClassDeclaration*>(currentContext->owner());
-    Q_ASSERT(classDecl);
-
-    classDecl->addBaseClass({decl->indexedType(), access, virtualInherited});
-    return CXChildVisit_Recurse;
-}
 //END dispatchCursor
 
 //BEGIN setDeclData
@@ -954,7 +925,7 @@ void Visitor::setDeclData(CXCursor cursor, NamespaceAliasDeclaration *decl) cons
 }
 //END setDeclData
 
-//BEGIN buildDeclaration
+//BEGIN build*
 template<CXCursorKind CK, class DeclType, bool hasContext>
 CXChildVisitResult Visitor::buildDeclaration(CXCursor cursor)
 {
@@ -989,22 +960,28 @@ CXChildVisitResult Visitor::buildDeclaration(CXCursor cursor)
     createDeclaration<CK, DeclType>(cursor, id, nullptr);
     return CXChildVisit_Recurse;
 }
-//END buildDeclaration
 
-//BEGIN buildUse
-template<CXCursorKind CK>
+CXChildVisitResult Visitor::buildParmDecl(CXCursor cursor)
+{
+    // There is no need to create declarations for anonymous function parameters e.g.: void f(int);
+    // Currently clang_Cursor_getSpellingNameRange returns not empty ranges for anonymous parameters. So we use clang_getCursorSpelling here.
+    if (ClangString(clang_getCursorSpelling(cursor)).isEmpty()) {
+        return CXChildVisit_Recurse;
+    }
+
+    return buildDeclaration<CXCursor_ParmDecl, typename DeclType<CXCursor_ParmDecl, false, false>::Type, false>(cursor);
+}
+
 CXChildVisitResult Visitor::buildUse(CXCursor cursor)
 {
     m_uses[m_parentContext->context].push_back(cursor);
-    return CK == CXCursor_DeclRefExpr || CK == CXCursor_MemberRefExpr ?
+    return cursor.kind == CXCursor_DeclRefExpr || cursor.kind == CXCursor_MemberRefExpr ?
         CXChildVisit_Recurse : CXChildVisit_Continue;
 }
 
-template<>
-CXChildVisitResult Visitor::buildUse<CXCursor_MacroExpansion>(CXCursor cursor)
+CXChildVisitResult Visitor::buildMacroExpansion(CXCursor cursor)
 {
-    auto currentContext = m_parentContext->context;
-    m_uses[currentContext].push_back(cursor);
+    buildUse(cursor);
 
     // cache that we encountered a macro expansion at this location
     unsigned int offset;
@@ -1013,7 +990,44 @@ CXChildVisitResult Visitor::buildUse<CXCursor_MacroExpansion>(CXCursor cursor)
 
     return CXChildVisit_Recurse;
 }
-//END buildUse
+
+CXChildVisitResult Visitor::buildCompoundStatement(CXCursor cursor)
+{
+    if (m_parentContext->context->type() == DUContext::Function)
+    {
+        auto context = createContext<CXCursor_CompoundStmt, DUContext::Other>(cursor);
+        CurrentContext newParent(context);
+        PushValue<CurrentContext*> pushCurrent(m_parentContext, &newParent);
+        clang_visitChildren(cursor, &visitCursor, this);
+        return CXChildVisit_Continue;
+    }
+    return CXChildVisit_Recurse;
+}
+
+CXChildVisitResult Visitor::buildCXXBaseSpecifier(CXCursor cursor)
+{
+    auto currentContext = m_parentContext->context;
+
+    bool virtualInherited = clang_isVirtualBase(cursor);
+    Declaration::AccessPolicy access = CursorKindTraits::kdevAccessPolicy(clang_getCXXAccessSpecifier(cursor));
+
+    auto classDeclCursor = clang_getCursorReferenced(cursor);
+    auto decl = findDeclaration(classDeclCursor);
+    if (!decl) {
+        // this happens for templates with template-dependent base classes e.g. - dunno whether we can/should do more here
+        clangDebug() << "failed to find declaration for base specifier:" << ClangString(clang_getCursorDisplayName(cursor));
+        return CXChildVisit_Recurse;
+    }
+
+    DUChainWriteLocker lock;
+    contextImportDecl(currentContext, decl);
+    auto classDecl = dynamic_cast<ClassDeclaration*>(currentContext->owner());
+    Q_ASSERT(classDecl);
+
+    classDecl->addBaseClass({decl->indexedType(), access, virtualInherited});
+    return CXChildVisit_Recurse;
+}
+//END build*
 
 DeclarationPointer Visitor::findDeclaration(CXCursor cursor) const
 {
@@ -1093,6 +1107,49 @@ AbstractType *Visitor::makeType(CXType type, CXCursor parent)
     }
 }
 
+RangeInRevision rangeInRevisionForUse(CXCursor cursor, CXCursorKind referencedCursorKind, CXSourceRange useRange, const QSet<unsigned int>& macroExpansionLocations)
+{
+    auto range = ClangRange(useRange).toRangeInRevision();
+
+    //TODO: Fix in clang, happens for operator<<, operator<, probably more
+    if (clang_Range_isNull(useRange)) {
+        useRange = clang_getCursorExtent(cursor);
+        range = ClangRange(useRange).toRangeInRevision();
+    }
+
+    if (referencedCursorKind == CXCursor_ConversionFunction) {
+        range.end = range.start;
+        range.start.column--;
+    }
+
+    // For uses inside macro expansions, create an empty use range at the spelling location
+    // the empty range is required in order to not "overlap" the macro expansion range
+    // and to allow proper navigation for the macro expansion
+    // also see JSON test 'macros.cpp'
+    if (clang_getCursorKind(cursor) != CXCursor_MacroExpansion) {
+        unsigned int expansionLocOffset;
+        const auto spellingLocation = clang_getRangeStart(useRange);
+        clang_getExpansionLocation(spellingLocation, nullptr, nullptr, nullptr, &expansionLocOffset);
+        if (macroExpansionLocations.contains(expansionLocOffset)) {
+            unsigned int spellingLocOffset;
+            clang_getSpellingLocation(spellingLocation, nullptr, nullptr, nullptr, &spellingLocOffset);
+            if (spellingLocOffset == expansionLocOffset) {
+                range.end = range.start;
+            }
+        }
+    } else {
+        // Workaround for wrong use range returned by clang for macro expansions
+        const auto contents = ClangUtils::getRawContents(clang_Cursor_getTranslationUnit(cursor), useRange);
+        const int firstOpeningParen = contents.indexOf('(');
+        if (firstOpeningParen != -1) {
+            range.end.column = range.start.column + firstOpeningParen;
+            range.end.line = range.start.line;
+        }
+    }
+
+    return range;
+}
+
 Visitor::Visitor(CXTranslationUnit tu, CXFile file,
                  const IncludeFileContexts& includes, const bool update)
     : m_file(file)
@@ -1127,37 +1184,8 @@ Visitor::Visitor(CXTranslationUnit tu, CXFile file,
                 }
             }
 
-            auto useRange = clang_getCursorReferenceNameRange(cursor, CXNameRange_WantSinglePiece, 0);
-
-            //TODO: Fix in clang, happens for operator<<, operator<, probably more
-            if (clang_Range_isNull(useRange)) {
-               useRange = clang_getCursorExtent(cursor);
-            }
-
-            auto range = ClangRange(useRange).toRangeInRevision();
-            // For uses inside macro expansions, create an empty use range at the spelling location
-            // the empty range is required in order to not "overlap" the macro expansion range
-            // and to allow proper navigation for the macro expansion
-            // also see JSON test 'macros.cpp'
-            if (clang_getCursorKind(cursor) != CXCursor_MacroExpansion) {
-                unsigned int expansionLocOffset;
-                const auto spellingLocation = clang_getRangeStart(useRange);
-                clang_getExpansionLocation(spellingLocation, nullptr, nullptr, nullptr, &expansionLocOffset);
-                if (m_macroExpansionLocations.contains(expansionLocOffset)) {
-                    unsigned int spellingLocOffset;
-                    clang_getSpellingLocation(spellingLocation, nullptr, nullptr, nullptr, &spellingLocOffset);
-                    if (spellingLocOffset == expansionLocOffset) {
-                        range.end.column = range.start.column;
-                    }
-                }
-            } else {
-                // Workaround for wrong use range returned by clang for macro expansions
-                const auto contents = ClangUtils::getRawContents(tu, useRange);
-                const int firstOpeningParen = contents.indexOf('(');
-                if (firstOpeningParen != -1) {
-                    range.end.column = range.start.column + firstOpeningParen;
-                }
-            }
+            const auto useRange = clang_getCursorReferenceNameRange(cursor, 0, 0);
+            const auto range = rangeInRevisionForUse(cursor, referenced.kind, useRange, m_macroExpansionLocations);
 
             DUChainWriteLocker lock;
             auto usedIndex = top->indexForUsedDeclaration(used.data());
@@ -1195,7 +1223,6 @@ CXChildVisitResult visitCursor(CXCursor cursor, CXCursor parent, CXClientData da
     UseCursorKind(CXCursor_EnumConstantDecl, cursor, parent);
     UseCursorKind(CXCursor_FunctionDecl, cursor, parent);
     UseCursorKind(CXCursor_VarDecl, cursor, parent);
-    UseCursorKind(CXCursor_ParmDecl, cursor, parent);
     UseCursorKind(CXCursor_TypeAliasDecl, cursor, parent);
     UseCursorKind(CXCursor_TypedefDecl, cursor, parent);
     UseCursorKind(CXCursor_CXXMethod, cursor, parent);
@@ -1220,19 +1247,26 @@ CXChildVisitResult visitCursor(CXCursor cursor, CXCursor parent, CXClientData da
     UseCursorKind(CXCursor_ObjCImplementationDecl, cursor, parent);
     UseCursorKind(CXCursor_ObjCCategoryImplDecl, cursor, parent);
     UseCursorKind(CXCursor_MacroDefinition, cursor, parent);
-    UseCursorKind(CXCursor_MacroExpansion, cursor);
-    UseCursorKind(CXCursor_TypeRef, cursor);
-    UseCursorKind(CXCursor_CXXBaseSpecifier, cursor);
-    UseCursorKind(CXCursor_TemplateRef, cursor);
-    UseCursorKind(CXCursor_NamespaceRef, cursor);
-    UseCursorKind(CXCursor_MemberRef, cursor);
-    UseCursorKind(CXCursor_LabelRef, cursor);
-    UseCursorKind(CXCursor_OverloadedDeclRef, cursor);
-    UseCursorKind(CXCursor_VariableRef, cursor);
-    UseCursorKind(CXCursor_DeclRefExpr, cursor);
-    UseCursorKind(CXCursor_MemberRefExpr, cursor);
-    UseCursorKind(CXCursor_CompoundStmt, cursor);
-    UseCursorKind(CXCursor_ObjCClassRef, cursor);
+    UseCursorKind(CXCursor_LabelStmt, cursor, parent);
+    case CXCursor_TypeRef:
+    case CXCursor_TemplateRef:
+    case CXCursor_NamespaceRef:
+    case CXCursor_MemberRef:
+    case CXCursor_LabelRef:
+    case CXCursor_OverloadedDeclRef:
+    case CXCursor_VariableRef:
+    case CXCursor_DeclRefExpr:
+    case CXCursor_MemberRefExpr:
+    case CXCursor_ObjCClassRef:
+        return visitor->buildUse(cursor);
+    case CXCursor_MacroExpansion:
+        return visitor->buildMacroExpansion(cursor);
+    case CXCursor_CompoundStmt:
+        return visitor->buildCompoundStatement(cursor);
+    case CXCursor_CXXBaseSpecifier:
+        return visitor->buildCXXBaseSpecifier(cursor);
+    case CXCursor_ParmDecl:
+        return visitor->buildParmDecl(cursor);
     default:
         return CXChildVisit_Recurse;
     }

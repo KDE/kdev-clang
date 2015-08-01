@@ -75,7 +75,7 @@ llvm::ErrorOr<unsigned> RefactoringContext::offset(const std::string &sourceFile
 
 void RefactoringContext::reportError(const std::error_code &error)
 {
-    QMessageBox::critical(nullptr, i18n("Error occurred"), QString::fromStdString(error.message()));
+    QMessageBox::warning(nullptr, i18n("Error occurred"), QString::fromStdString(error.message()));
 }
 
 void RefactoringContext::projectOpened(IProject *project)

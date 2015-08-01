@@ -903,6 +903,48 @@ void TestDUChain::testMacrosRanges()
     QCOMPARE(macroDefinition->uses().begin()->first(), RangeInRevision(1,0,1,11));
 }
 
+void TestDUChain::testMultiLineMacroRanges()
+{
+    TestFile file("#define FUNC_MACROS(x) struct str##x{};\nFUNC_MACROS(x\n);", "cpp");
+    file.parse(TopDUContext::AllDeclarationsContextsAndUses);
+    QVERIFY(file.waitForParsed(5000));
+
+    DUChainReadLocker lock;
+    QVERIFY(file.topContext());
+    QCOMPARE(file.topContext()->localDeclarations().size(), 3);
+    auto macroDefinition = file.topContext()->localDeclarations()[0];
+    QVERIFY(macroDefinition);
+    QCOMPARE(macroDefinition->range(), RangeInRevision(0,8,0,19));
+    auto structDeclaration = file.topContext()->localDeclarations()[1];
+    QVERIFY(structDeclaration);
+    QCOMPARE(structDeclaration->range(), RangeInRevision(1,0,1,0));
+
+    QCOMPARE(macroDefinition->uses().size(), 1);
+    QCOMPARE(macroDefinition->uses().begin()->first(), RangeInRevision(1,0,1,11));
+}
+
+void TestDUChain::testNestedMacroRanges()
+{
+    TestFile file("#define INNER int var; var = 0;\n#define MACRO() INNER\nint main(){MACRO(\n);}", "cpp");
+    file.parse(TopDUContext::AllDeclarationsContextsAndUses);
+    QVERIFY(file.waitForParsed(5000));
+
+    DUChainReadLocker lock;
+    QVERIFY(file.topContext());
+    QCOMPARE(file.topContext()->localDeclarations().size(), 3);
+    auto main = file.topContext()->localDeclarations()[2];
+    QVERIFY(main);
+    auto mainCtx = main->internalContext()->childContexts().first();
+    QVERIFY(mainCtx);
+    QCOMPARE(mainCtx->localDeclarations().size(), 1);
+    auto var = mainCtx->localDeclarations().first();
+    QVERIFY(var);
+    QCOMPARE(var->range(), RangeInRevision(2,11,2,11));
+
+    QCOMPARE(var->uses().size(), 1);
+    QCOMPARE(var->uses().begin()->first(), RangeInRevision(2,11,2,11));
+}
+
 void TestDUChain::testNestedImports()
 {
     TestFile B("#pragma once\nint B();\n", "h");
@@ -1021,4 +1063,44 @@ void TestDUChain::testReparseMacro()
     QCOMPARE(structTypedef->range(), RangeInRevision(1,8,1,9));
     QCOMPARE(structTypedef->uses().size(), 1);
     QCOMPARE(structTypedef->uses().begin()->first(), RangeInRevision(2,0,2,1));
+}
+
+void TestDUChain::testGotoStatement()
+{
+    TestFile file("int main() {\ngoto label;\ngoto label;\nlabel: return 0;}", "cpp");
+    file.parse(TopDUContext::AllDeclarationsContextsAndUses);
+    QVERIFY(file.waitForParsed(5000));
+
+    DUChainReadLocker lock;
+    QVERIFY(file.topContext());
+    QCOMPARE(file.topContext()->localDeclarations().size(), 1);
+    auto main = file.topContext()->localDeclarations()[0];
+    QVERIFY(main);
+    auto mainCtx = main->internalContext()->childContexts().first();
+    QVERIFY(mainCtx);
+    QCOMPARE(mainCtx->localDeclarations().size(), 1);
+    auto label = mainCtx->localDeclarations().first();
+    QVERIFY(label);
+    QCOMPARE(label->range(), RangeInRevision(3,0,3,5));
+
+    QCOMPARE(label->uses().size(), 1);
+    QCOMPARE(label->uses().begin()->first(), RangeInRevision(1,5,1,10));
+    QCOMPARE(label->uses().begin()->last(), RangeInRevision(2,5,2,10));
+}
+
+void TestDUChain::testRangesOfOperatorsInsideMacro()
+{
+    TestFile file("class Test{public: Test& operator++(int);};\n#define MACRO(var) var++;\nint main(){\nTest tst; MACRO(tst)}", "cpp");
+    file.parse(TopDUContext::AllDeclarationsContextsAndUses);
+    QVERIFY(file.waitForParsed(5000));
+
+    DUChainReadLocker lock;
+    QVERIFY(file.topContext());
+    QCOMPARE(file.topContext()->localDeclarations().size(), 3);
+    auto testClass = file.topContext()->localDeclarations()[0];
+    QVERIFY(testClass);
+    auto operatorPlusPlus = testClass->internalContext()->localDeclarations().first();
+    QVERIFY(operatorPlusPlus);
+    QCOMPARE(operatorPlusPlus->uses().size(), 1);
+    QCOMPARE(operatorPlusPlus->uses().begin()->first(), RangeInRevision(3,10,3,10));
 }

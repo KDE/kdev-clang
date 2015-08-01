@@ -38,22 +38,6 @@ namespace CursorKindTraits {
 
 using namespace KDevelop;
 
-constexpr bool isUse(CXCursorKind CK)
-{
-    return CK == CXCursor_TypeRef
-    || CK == CXCursor_CXXBaseSpecifier
-    || CK == CXCursor_TemplateRef
-    || CK == CXCursor_NamespaceRef
-    || CK == CXCursor_MemberRef
-    || CK == CXCursor_LabelRef
-    || CK == CXCursor_OverloadedDeclRef
-    || CK == CXCursor_VariableRef
-    || CK == CXCursor_DeclRefExpr
-    || CK == CXCursor_MemberRefExpr
-    || CK == CXCursor_MacroExpansion
-    || CK == CXCursor_ObjCClassRef;
-}
-
 constexpr bool isClassTemplate(CXCursorKind CK)
 {
     return CK == CXCursor_ClassTemplate || CK == CXCursor_ClassTemplatePartialSpecialization;
@@ -101,7 +85,8 @@ constexpr bool isDeclaration(CXCursorKind CK)
     || CK == CXCursor_NamespaceAlias
     || CK == CXCursor_UsingDirective
     || CK == CXCursor_UsingDeclaration
-    || CK == CXCursor_TypeAliasDecl;
+    || CK == CXCursor_TypeAliasDecl
+    || CK == CXCursor_LabelStmt;
 }
 
 constexpr Decision isDefinition(CXCursorKind CK)
@@ -170,7 +155,8 @@ constexpr bool isKDevDeclaration(CXCursorKind CK, bool isClassMember)
     || CK == CXCursor_UsingDeclaration
     || CK == CXCursor_TypeAliasDecl
     || CK == CXCursor_Namespace
-    || CK == CXCursor_EnumDecl);
+    || CK == CXCursor_EnumDecl
+    || CK == CXCursor_LabelStmt);
 }
 
 constexpr bool isKDevClassDeclaration(CXCursorKind CK, bool isDefinition)

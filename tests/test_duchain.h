@@ -67,6 +67,10 @@ private slots:
     void testNestedImports();
     void testEnvironmentWithDifferentOrderOfElements();
     void testReparseMacro();
+    void testMultiLineMacroRanges();
+    void testNestedMacroRanges();
+    void testGotoStatement();
+    void testRangesOfOperatorsInsideMacro();
 
     void benchDUChainBuilder();
 

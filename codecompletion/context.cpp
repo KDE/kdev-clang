@@ -35,9 +35,7 @@
 #include "../util/clangdebug.h"
 #include "../util/clangtypes.h"
 #include "../duchain/parsesession.h"
-#include "../duchain/cursorkindtraits.h"
 #include "../duchain/navigationwidget.h"
-
 
 #include <memory>
 
@@ -304,14 +302,14 @@ QString& elideStringRight(QString& str, int length)
 }
 
 /**
- * @return Value suited for @ref CodeCompletionModel::MatchQuality in the range [0.0, 10.0]
+ * @return Value suited for @ref CodeCompletionModel::MatchQuality in the range [0.0, 10.0] (the higher the better)
  *
  * See http://clang.llvm.org/doxygen/CodeCompleteConsumer_8h_source.html for list of priorities
  * They (currently) have a range from [-3, 80] (the lower, the better)
  */
 int codeCompletionPriorityToMatchQuality(unsigned int completionPriority)
 {
-    return qBound(0u, completionPriority, 80u) / 8;
+    return 10u - qBound(0u, completionPriority, 80u) / 8;
 }
 
 /**
@@ -392,10 +390,10 @@ void addEnumItems(Declaration* declaration, QHash<QualifiedIdentifier, Declarati
     }
 }
 
-QHash<QualifiedIdentifier, Declaration*> generateCache(const DUContextPointer& ctx, const CursorInRevision& position)
+QMultiHash<QualifiedIdentifier, Declaration*> generateCache(const DUContextPointer& ctx, const CursorInRevision& position)
 {
     const auto allDeclarationsList = ctx->allDeclarations(position, ctx->topContext());
-    QHash<QualifiedIdentifier, Declaration*> declarationsHash;
+    QMultiHash<QualifiedIdentifier, Declaration*> declarationsHash;
 
     for (const auto& declaration : allDeclarationsList) {
         // We store function-local declarations with qid like: "function::declaration", but completion items provided by Clang have qid like: "declaration", so we use id here instead.
@@ -407,6 +405,29 @@ QHash<QualifiedIdentifier, Declaration*> generateCache(const DUContextPointer& c
     }
 
     return declarationsHash;
+}
+
+Declaration* findDeclaration(const QualifiedIdentifier& qid, const DUContextPointer& ctx, const CursorInRevision& position, const QMultiHash<QualifiedIdentifier, Declaration*>& declarationsCache, QSet<Declaration*>& handled)
+{
+    auto i = declarationsCache.find(qid);
+    while (i != declarationsCache.end() && i.key() == qid) {
+        auto declaration = i.value();
+        if (!handled.contains(declaration)) {
+            handled.insert(declaration);
+            return declaration;
+        }
+        ++i;
+    }
+
+    const auto foundDeclarations = ctx->findDeclarations(qid, position);
+    for (auto dec : foundDeclarations) {
+        if (!handled.contains(dec)) {
+            handled.insert(dec);
+            return dec;
+        }
+    }
+
+    return nullptr;
 }
 
 }
@@ -504,11 +525,21 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
             continue;
         }
 
+        const bool isBuiltin = (result.CursorKind == CXCursor_NotImplemented);
+        if (isBuiltin && m_filters & NoBuiltins) {
+            continue;
+        }
+
+        const bool isDeclaration = !isMacroDefinition && !isBuiltin;
+        if (isDeclaration && m_filters & NoDeclarations) {
+            continue;
+        }
+
         const uint chunks = clang_getNumCompletionChunks(result.CompletionString);
 
-        // the string that would be neede to type, usually the identifier of something
+        // the string that would be needed to type, usually the identifier of something. Also we use it as name for code completion declaration items.
         QString typed;
-        // the display string we use in the code completion items, including the function signature
+        // the display string we use in the simple code completion items, including the function signature.
         QString display;
         // the return type of a function e.g.
         QString resultType;
@@ -532,6 +563,11 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
             const auto kind = clang_getCompletionChunkKind(result.CompletionString, j);
             if (kind == CXCompletionChunk_CurrentParameter || kind == CXCompletionChunk_Optional) {
                 continue;
+            }
+
+            // We don't need function signature for declaration items, we can get it directly from the declaration. Also adding the function signature to the "display" would break the "Detailed completion" option.
+            if(isDeclaration && !typed.isEmpty()){
+                break;
             }
 
             const QString string = ClangString(clang_getCompletionChunkText(result.CompletionString, j)).toString();
@@ -573,18 +609,12 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
             }
         }
 
-        const bool isBuiltin = (result.CursorKind == CXCursor_NotImplemented);
-        if (isBuiltin && m_filters & NoBuiltins) {
+        if(typed.isEmpty()){
             continue;
         }
 
         // ellide text to the right for overly long result types (templates especially)
         elideStringRight(resultType, MAX_RETURN_TYPE_STRING_LENGTH);
-
-        const bool isDeclaration = !isMacroDefinition && !isBuiltin;
-        if (isDeclaration && m_filters & NoDeclarations) {
-            continue;
-        }
 
         if (isDeclaration) {
             const Identifier id(typed);
@@ -599,19 +629,7 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
                 continue;
             }
 
-            // TODO: This easily breaks if there are multiple function overloads
-            // e.g. void foo(), void foo(int) => only the first is selected
-            auto found = declarationsCache.value(qid);
-
-            if (!found) {
-                for (auto d : ctx->findDeclarations(qid, m_position)) {
-                    if (!handled.contains(d)) {
-                        found = d;
-                        handled.insert(d);
-                        break;
-                    }
-                }
-            }
+            auto found = findDeclaration(qid, ctx, m_position, declarationsCache, handled);
 
             CompletionTreeItemPointer item;
             if (found) {
@@ -634,7 +652,11 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
             }
 
             if (isValidSpecialCompletionIdentifier(qid)) {
-                specialItems.append(item);
+                // If it's a special completion identifier e.g. "operator=(const&)" and we don't have a declaration for it, don't add it into completion list, as this item is completely useless and pollutes the test case.
+                // This happens e.g. for "class A{}; a.|".  At | we have "operator=(const A&)" as a special completion identifier without a declaration.
+                if(item->declaration()){
+                    specialItems.append(item);
+                }
             } else {
                 items.append(item);
             }
