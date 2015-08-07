@@ -54,6 +54,16 @@ private:
 
 };
 
+// Manager workaround for single position
+QVector<Refactoring *> refactoringsFor(const std::string &filename, unsigned offset,
+                                       QThread *targetThread,
+                                       clang::tooling::RefactoringTool &tool);
+
+// Manager workaround for range
+QVector<Refactoring *> refactoringsFor(const std::string &filename, unsigned offsetBegin,
+                                       unsigned offsetEnd, QThread *targetThread,
+                                       clang::tooling::RefactoringTool &tool);
+
 Q_DECLARE_METATYPE(QVector<Refactoring *>);
 
 #endif //KDEV_CLANG_REFACTORINGMANAGER_H

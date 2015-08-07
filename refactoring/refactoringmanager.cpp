@@ -235,12 +235,7 @@ void RefactoringManager::fillContextMenu(KDevelop::ContextMenuExtension &extensi
         parent()->refactoringContext()->scheduleOnSingleFile(
             [filename, offset, mainThread](RefactoringTool &clangTool)
             {
-                auto faf = cpp::make_unique<ExplorerActionFactory>(filename, offset);
-                clangTool.run(faf.get());
-                for (Refactoring *r : faf->m_refactorings) {
-                    r->moveToThread(mainThread);
-                }
-                return QVector<Refactoring *>::fromStdVector(faf->m_refactorings);
+                return refactoringsFor(filename, offset, mainThread, clangTool);
             }, filename, endMutating);
     } else {
         auto offset1 = parent()->refactoringContext()->offset(filename, selection.start());
@@ -255,22 +250,40 @@ void RefactoringManager::fillContextMenu(KDevelop::ContextMenuExtension &extensi
         parent()->refactoringContext()->scheduleOnSingleFile(
             [filename, offset1, offset2, mainThread](RefactoringTool &tool)
             {
-                auto exprMatcher = expr().bind("Expr");
-                ExprRangeRefactorings refactorings(filename, offset1.get(), offset2.get());
-                MatchFinder finder;
-                finder.addMatcher(exprMatcher, &refactorings);
-                tool.run(newFrontendActionFactory(&finder).get());
-
-                QVector<Refactoring *> result =
-                    QVector<Refactoring *>::fromStdVector(refactorings.refactorings());
-                for (auto refactoring : result) {
-                    refactoring->moveToThread(mainThread);
-                }
-                return result;
+                return refactoringsFor(filename, offset1.get(), offset2.get(), mainThread, tool);
             }, filename, endMutating);
     }
 }
 
+QVector<Refactoring *> refactoringsFor(const std::string &filename, unsigned offset,
+                                       QThread *targetThread,
+                                       clang::tooling::RefactoringTool &tool)
+{
+    auto faf = cpp::make_unique<ExplorerActionFactory>(filename, offset);
+    tool.run(faf.get());
+    for (Refactoring *r : faf->m_refactorings) {
+        r->moveToThread(targetThread);
+    }
+    return QVector<Refactoring *>::fromStdVector(faf->m_refactorings);
+}
+
+QVector<Refactoring *> refactoringsFor(const std::string &filename, unsigned offsetBegin,
+                                       unsigned offsetEnd, QThread *targetThread,
+                                       clang::tooling::RefactoringTool &tool)
+{
+    auto exprMatcher = expr().bind("Expr");
+    ExprRangeRefactorings refactorings(filename, offsetBegin, offsetEnd);
+    MatchFinder finder;
+    finder.addMatcher(exprMatcher, &refactorings);
+    tool.run(newFrontendActionFactory(&finder).get());
+
+    QVector<Refactoring *> result =
+        QVector<Refactoring *>::fromStdVector(refactorings.refactorings());
+    for (auto refactoring : result) {
+        refactoring->moveToThread(targetThread);
+    }
+    return result;
+}
 
 ExplorerASTConsumer::ExplorerASTConsumer(ExplorerActionFactory &factory, CompilerInstance &CI)
     : m_visitor(*this)

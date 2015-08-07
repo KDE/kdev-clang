@@ -255,7 +255,8 @@ bool isInRange(const std::string &fileName, unsigned offset, SourceLocation star
     if (fileEntry == nullptr) {
         return false;
     }
-    if (!llvm::sys::fs::equivalent(fileEntry->getName(), fileName)) {
+    if ((fileEntry->getName() != fileName) &&
+        (!llvm::sys::fs::equivalent(fileEntry->getName(), fileName))) {
         return false;
     }
     return startD.second <= offset && offset <= endD.second;
