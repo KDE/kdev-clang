@@ -472,7 +472,7 @@ Refactoring *ExplorerRecursiveASTVisitor::moveFunctionRefactoring(
             // Because it doesn't make sense
             return nullptr;
         }
-        return new MoveFunctionRefactoring(methodDecl);
+        return new MoveFunctionRefactoring(methodDecl, m_ASTConsumer.m_CI.getASTContext());
     }
     return nullptr;
 }

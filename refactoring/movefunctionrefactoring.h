@@ -25,19 +25,32 @@
 #include "refactoring.h"
 #include "redeclarationchain.h"
 
+/** change definition a::method to b::method (also change nested name spec)
+ *  generate friend declaration
+ *  change usages
+ */
 class MoveFunctionRefactoring : public Refactoring
 {
     Q_OBJECT;
     Q_DISABLE_COPY(MoveFunctionRefactoring);
 
+    class Callback;
+
 public:
-    explicit MoveFunctionRefactoring(const clang::CXXMethodDecl *decl);
+    explicit MoveFunctionRefactoring(const clang::CXXMethodDecl *decl,
+                                     clang::ASTContext &astContext);
 
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
     virtual QString name() const override;
 
+    clang::tooling::Replacements doRefactoring(clang::tooling::RefactoringTool &tool,
+                                               const std::string &targetRecord);
+
 private:
+    std::string m_declaration;
     RedeclarationChain m_declDispatcher;
+    bool m_declarationInSourceIsADefinition;
+    bool m_isStatic;
 };
 
 
