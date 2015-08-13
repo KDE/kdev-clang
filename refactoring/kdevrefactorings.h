@@ -51,6 +51,8 @@ class KDevRefactorings : public QObject
 public:
     explicit KDevRefactorings(ClangSupport *parent);
 
+    ClangSupport *parent();
+
     void fillContextMenu(KDevelop::ContextMenuExtension &extension, KDevelop::Context *context);
 
     // TODO: Handle configuration of projects to regenerate CompilationDatabase

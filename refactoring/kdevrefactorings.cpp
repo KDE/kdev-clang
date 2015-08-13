@@ -38,6 +38,11 @@ KDevRefactorings::KDevRefactorings(ClangSupport *parent)
 {
 }
 
+ClangSupport *KDevRefactorings::parent()
+{
+    return static_cast<ClangSupport *>(QObject::parent());
+}
+
 void KDevRefactorings::fillContextMenu(ContextMenuExtension &extension, Context *context)
 {
     if (EditorContext *ctx = dynamic_cast<EditorContext *>(context)) {

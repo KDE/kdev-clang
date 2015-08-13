@@ -27,8 +27,9 @@
 #include <kdevplatform/interfaces/icore.h>
 
 #include "refactoringcontext.h"
+#include "kdevrefactorings.h"
 #include "utils.h"
-#include "../util/clangdebug.h"
+#include "../clangsupport.h"
 
 using namespace KDevelop;
 
@@ -50,6 +51,8 @@ clang::tooling::RefactoringTool &DocumentCache::refactoringTool()
     return *m_refactoringTool.get();
 }
 
+// NOTE: llvm::sys::fs::equivalent is not best option for fully transient files... (but such files
+// doesn't exist)
 clang::tooling::RefactoringTool DocumentCache::refactoringToolForFile(
     const std::string &fileName)
 {
@@ -63,11 +66,38 @@ clang::tooling::RefactoringTool DocumentCache::refactoringToolForFile(
                      {
                          return llvm::sys::fs::equivalent(file, fileName);
                      }) != files.end()) {
+        // exact match - fileName is main file in some TU
         auto result = clang::tooling::RefactoringTool(*ctx->database, {fileName});
         initializeCacheInRefactoringTool(result);
         return result;
     } else {
-        return refactoringTool();   // a copy of
+        // use ClangSupport::getPotentialBuddies to get set of possible TUs
+        ClangSupport *clangSupport = static_cast<RefactoringContext *>(parent())->parent()->parent();
+        auto possibleBuddies = clangSupport->getPotentialBuddies(
+            QUrl::fromLocalFile(QString::fromStdString(fileName)));
+        // and select from this set files which indeed are main TU files
+        std::vector<std::string> tus;
+        for (auto url : possibleBuddies) {
+            auto filename = url.toLocalFile().toStdString();
+            if (std::find_if(
+                files.begin(), files.end(),
+                [&filename](const std::string &file)
+                {
+                    return llvm::sys::fs::equivalent(file, filename);
+                }) != files.end()) {
+                tus.push_back(std::move(filename));
+            }
+        }
+        if (!tus.empty()) {
+            // if such files exist - use them
+            auto result = clang::tooling::RefactoringTool(*ctx->database, tus);
+            initializeCacheInRefactoringTool(result);
+            return result;
+            // NOTE: if find_buddy was was misleading, this tool will not serve its purposes
+        } else {
+            // otherwise - fallback
+            return refactoringTool();   // a copy of
+        }
     }
 }
 

@@ -62,8 +62,11 @@ std::function<void(Replacements)> Refactoring::uiLockerCallback(QDialog *uiLocke
 {
     return [uiLocker, &result](Replacements repl)
     {
-        result = std::move(repl);
-        uiLocker->accept();
-        // TODO: dialog probably can be closed anyway, detect and clear replacements
+        // User may close dialog before end of operation
+        if(uiLocker->isVisible()) {
+            result = std::move(repl);
+            uiLocker->accept();
+        }
+        uiLocker->deleteLater();
     };
 }
