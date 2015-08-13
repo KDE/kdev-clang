@@ -63,6 +63,7 @@ public:
     llvm::ErrorOr<unsigned> offset(const std::string &sourceFile,
                                    const KTextEditor::Cursor &position) const;
 
+    void reportError(const QString &errorMessage);
     void reportError(const std::error_code &error);
 
     template<typename Task, typename Callback>

@@ -105,6 +105,7 @@ void ContextMenuMutator::endFillingContextMenu(const QVector<Refactoring *> &ref
             auto result = refactorAction->invoke(ctx);
             if (!result) {
                 ctx->reportError(result.getError());
+                return;
             }
             auto changes = toDocumentChangeSet(result.get(), ctx->cache,
                                                ctx->cache->refactoringTool().getFiles());

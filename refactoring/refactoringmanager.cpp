@@ -19,14 +19,18 @@
     Boston, MA 02110-1301, USA.
 */
 
-#include "refactoringmanager.h"
+// KF5
+#include <KTextEditor/View>
 
 // Clang
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/FrontendAction.h>
 #include <clang/AST/RecursiveASTVisitor.h>
+#include <clang/ASTMatchers/ASTMatchers.h>
+#include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/Tooling/Tooling.h>
 
+#include "refactoringmanager.h"
 #include "kdevrefactorings.h"
 #include "refactoringcontext.h"
 #include "documentcache.h"
@@ -37,12 +41,14 @@
 #include "declarationcomparator.h"
 #include "changesignaturerefactoring.h"
 #include "encapsulatefieldrefactoring.h"
+#include "extractvariablerefactoring.h"
 #include "debug.h"
 
 using namespace std;
 using namespace llvm;
 using namespace clang;
 using namespace clang::tooling;
+using namespace clang::ast_matchers;
 
 namespace
 {
@@ -157,6 +163,36 @@ private:
     bool m_stop = false;  // no need to parse more source files
 };
 
+class ExprRangeRefactorings : public MatchFinder::MatchCallback
+{
+public:
+    ExprRangeRefactorings(const string &fileName, const unsigned int rangeBegin,
+                          const unsigned int rangeEnd);
+
+    const std::vector<Refactoring *> &refactorings() const
+    {
+        return m_refactorings;
+    }
+
+    virtual void run(const MatchFinder::MatchResult &result) override;
+
+    virtual void onEndOfTranslationUnit() override;
+
+private:
+    bool isInRange(const MatchFinder::MatchResult &result, SourceRange range) const;
+    bool isInRange(const MatchFinder::MatchResult &result,
+                   SourceLocation location) const;
+
+private:
+    const std::string &m_fileName;
+    const Expr *m_expr = nullptr;
+    ASTContext *m_astContext = nullptr;
+    SourceManager *m_sourceManager = nullptr;
+    std::vector<Refactoring *> m_refactorings;
+    const unsigned m_rangeBegin;
+    const unsigned m_rangeEnd;
+};
+
 }
 
 #include "contextmenumutator.h"
@@ -181,28 +217,57 @@ void RefactoringManager::fillContextMenu(KDevelop::ContextMenuExtension &extensi
     {
         auto _offset = parent()->refactoringContext()->offset(filename, context->position());
         if (!_offset) {
-            // TODO: notify user
-            refactorDebug() << "Unable to translate cursor position to offset in file:" <<
-                            _offset.getError().message();
+            parent()->refactoringContext()->reportError(_offset.getError());
             return;
         }
         offset = _offset.get();
     }
+    auto selection = context->view()->selectionRange();
+
     auto mutator = new ContextMenuMutator(extension, this);
+    auto endMutating = [mutator](const QVector<Refactoring *> &result)
+    {
+        mutator->endFillingContextMenu(result);
+    };
     QThread *mainThread = thread(); // Only for lambda below
-    parent()->refactoringContext()->scheduleOnSingleFile(
-        [filename, offset, mainThread](RefactoringTool &clangTool)
-        {
-            auto faf = cpp::make_unique<ExplorerActionFactory>(filename, offset);
-            clangTool.run(faf.get());
-            for (Refactoring *r : faf->m_refactorings) {
-                r->moveToThread(mainThread);
-            }
-            return QVector<Refactoring *>::fromStdVector(faf->m_refactorings);
-        }, filename, [mutator](const QVector<Refactoring *> &result)
-        {
-            mutator->endFillingContextMenu(result);
-        });
+    if (!selection.isValid()) {
+        parent()->refactoringContext()->scheduleOnSingleFile(
+            [filename, offset, mainThread](RefactoringTool &clangTool)
+            {
+                auto faf = cpp::make_unique<ExplorerActionFactory>(filename, offset);
+                clangTool.run(faf.get());
+                for (Refactoring *r : faf->m_refactorings) {
+                    r->moveToThread(mainThread);
+                }
+                return QVector<Refactoring *>::fromStdVector(faf->m_refactorings);
+            }, filename, endMutating);
+    } else {
+        auto offset1 = parent()->refactoringContext()->offset(filename, selection.start());
+        auto offset2 = parent()->refactoringContext()->offset(filename, selection.end());
+        if (!offset1) {
+            parent()->refactoringContext()->reportError(offset1.getError());
+            return;
+        } else if (!offset2) {
+            parent()->refactoringContext()->reportError(offset2.getError());
+            return;
+        }
+        parent()->refactoringContext()->scheduleOnSingleFile(
+            [filename, offset1, offset2, mainThread](RefactoringTool &tool)
+            {
+                auto exprMatcher = expr().bind("Expr");
+                ExprRangeRefactorings refactorings(filename, offset1.get(), offset2.get());
+                MatchFinder finder;
+                finder.addMatcher(exprMatcher, &refactorings);
+                tool.run(newFrontendActionFactory(&finder).get());
+
+                QVector<Refactoring *> result =
+                    QVector<Refactoring *>::fromStdVector(refactorings.refactorings());
+                for (auto refactoring : result) {
+                    refactoring->moveToThread(mainThread);
+                }
+                return result;
+            }, filename, endMutating);
+    }
 }
 
 
@@ -378,4 +443,51 @@ Refactoring *ExplorerRecursiveASTVisitor::encapsulateFieldRefactoring(
     const DeclaratorDecl *decl) const
 {
     return new EncapsulateFieldRefactoring(decl);
+}
+
+ExprRangeRefactorings::ExprRangeRefactorings(const string &fileName, const unsigned int rangeBegin,
+                                             const unsigned int rangeEnd)
+    : m_fileName(fileName)
+    , m_rangeBegin(rangeBegin)
+    , m_rangeEnd(rangeEnd)
+{
+}
+
+bool ExprRangeRefactorings::isInRange(const MatchFinder::MatchResult &result,
+                                      SourceRange range) const
+{
+    SourceRange charRange = tokenRangeToCharRange(range, *result.SourceManager,
+                                                  result.Context->getLangOpts());
+    return ::isInRange(m_fileName, m_rangeBegin, charRange, *result.SourceManager) &&
+           ::isInRange(m_fileName, m_rangeEnd, charRange, *result.SourceManager);
+}
+
+bool ExprRangeRefactorings::isInRange(const MatchFinder::MatchResult &result,
+                                      SourceLocation location) const
+{
+    return isInRange(result, tokenRangeToCharRange(location, *result.SourceManager,
+                                                   result.Context->getLangOpts()));
+}
+
+void ExprRangeRefactorings::run(const MatchFinder::MatchResult &result)
+{
+    if (!m_expr && m_astContext) {
+        // refactorings populated, ignore rest
+        return;
+    }
+    const Expr *expr = result.Nodes.getNodeAs<Expr>("Expr");
+    if (isInRange(result, expr->getSourceRange())) {
+        m_expr = expr; // overridden by most descent node (can be easily extended to return all...)
+        m_sourceManager = result.SourceManager;
+        m_astContext = result.Context;
+    }
+}
+
+void ExprRangeRefactorings::onEndOfTranslationUnit()
+{
+    if (m_expr) {
+        m_refactorings.push_back(
+            new ExtractVariableRefactoring(m_expr, m_astContext, m_sourceManager));
+    }
+    m_expr = nullptr;
 }

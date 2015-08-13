@@ -28,6 +28,7 @@ set(SRCS
     refactoringcontext_worker.cpp
     contextmenumutator.cpp
     actionwatcher.cpp
+    extractvariablerefactoring.cpp
 )
 
 add_library(kdevclangrefactor STATIC

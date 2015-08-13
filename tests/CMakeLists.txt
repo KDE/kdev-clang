@@ -96,6 +96,15 @@ ecm_add_test(test_encapsulatefield.cpp
         kdevclangrefactor
 )
 
+ecm_add_test(test_extractvariable.cpp
+    TEST_NAME test_extractvariable
+    LINK_LIBRARIES
+        KDev::Tests
+        Qt5::Test
+        refactorenv
+        kdevclangrefactor
+)
+
 endif()
 
 if(KDEVPLATFORM_JSONTESTS_LIBRARIES)
