@@ -30,6 +30,8 @@ set(SRCS
     actionwatcher.cpp
     extractvariablerefactoring.cpp
     extractfunctionrefactoring.cpp
+    movefunctionrefactoring.cpp
+    instancetostaticrefactoring.cpp
 )
 
 add_library(kdevclangrefactor STATIC

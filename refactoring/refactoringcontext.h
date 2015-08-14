@@ -65,6 +65,7 @@ public:
 
     void reportError(const QString &errorMessage);
     void reportError(const std::error_code &error);
+    void reportInformation(const QString &information);
 
     template<typename Task, typename Callback>
     void schedule(Task task, Callback callback);
@@ -73,8 +74,6 @@ public:
     // Convenience method on top of @c schedule
     clang::tooling::Replacements scheduleRefactoring(
         std::function<clang::tooling::Replacements(clang::tooling::RefactoringTool &)> task);
-
-    // TODO: schedule refactoring (with ui locker, with Replacements as result)
 
 private: // (slots)
     // Only one project for now

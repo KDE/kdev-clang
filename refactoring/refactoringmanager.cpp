@@ -43,6 +43,8 @@
 #include "encapsulatefieldrefactoring.h"
 #include "extractvariablerefactoring.h"
 #include "extractfunctionrefactoring.h"
+#include "movefunctionrefactoring.h"
+#include "instancetostaticrefactoring.h"
 #include "debug.h"
 
 using namespace std;
@@ -96,6 +98,10 @@ private:
     Refactoring *changeSignatureRefactoring(const FunctionDecl *functionDecl) const;
 
     Refactoring *encapsulateFieldRefactoring(const DeclaratorDecl *decl) const;
+
+    Refactoring *instanceToStaticRefactoring(const FunctionDecl *functionDecl) const;
+
+    Refactoring *moveFunctionRefactoring(const FunctionDecl *functionDecl) const;
 
     /// Request ClangTool to stop after this translation unit
     void done();
@@ -347,7 +353,9 @@ void ExplorerRecursiveASTVisitor::done()
 
 void ExplorerRecursiveASTVisitor::addRefactoring(Refactoring *refactoring)
 {
-    m_ASTConsumer.m_factory.m_refactorings.push_back(refactoring);
+    if (refactoring) {
+        m_ASTConsumer.m_factory.m_refactorings.push_back(refactoring);
+    }
 }
 
 ////////////////////// DECISIONS ARE MADE BELOW ///////////////////////
@@ -365,7 +373,6 @@ bool ExplorerRecursiveASTVisitor::VisitDeclRefExpr(DeclRefExpr *declRefExpr)
         done();
         const VarDecl *varDecl = llvm::dyn_cast<VarDecl>(declRefExpr->getDecl());
         if (!varDecl) {
-            refactorDebug() << "Found DeclRefExpr, but its declaration is not VarDecl";
             return true;
         }
         addRefactoring(renameVarDeclRefactoring(varDecl));
@@ -438,6 +445,38 @@ Refactoring *ExplorerRecursiveASTVisitor::changeSignatureRefactoring(
     return new ChangeSignatureRefactoring(canonicalDecl);
 }
 
+Refactoring *ExplorerRecursiveASTVisitor::instanceToStaticRefactoring(
+    const FunctionDecl *functionDecl) const
+{
+    if (const CXXMethodDecl *methodDecl = llvm::dyn_cast<CXXMethodDecl>(functionDecl)) {
+        if (methodDecl->isVirtual() || methodDecl->isUsualDeallocationFunction() ||
+            methodDecl->isCopyAssignmentOperator() || methodDecl->isMoveAssignmentOperator() ||
+            isa<CXXConversionDecl>(methodDecl) || isa<CXXConstructorDecl>(methodDecl) ||
+            isa<CXXDestructorDecl>(methodDecl) || methodDecl->isStatic()) {
+            // Because it doesn't make sense
+            return nullptr;
+        }
+        return new InstanceToStaticRefactoring(methodDecl);
+    }
+    return nullptr;
+}
+
+Refactoring *ExplorerRecursiveASTVisitor::moveFunctionRefactoring(
+    const FunctionDecl *functionDecl) const
+{
+    if (const CXXMethodDecl *methodDecl = llvm::dyn_cast<CXXMethodDecl>(functionDecl)) {
+        if (methodDecl->isVirtual() || methodDecl->isUsualDeallocationFunction() ||
+            methodDecl->isCopyAssignmentOperator() || methodDecl->isMoveAssignmentOperator() ||
+            isa<CXXConversionDecl>(methodDecl) || isa<CXXConstructorDecl>(methodDecl) ||
+            isa<CXXDestructorDecl>(methodDecl)) {
+            // Because it doesn't make sense
+            return nullptr;
+        }
+        return new MoveFunctionRefactoring(methodDecl);
+    }
+    return nullptr;
+}
+
 bool ExplorerRecursiveASTVisitor::VisitFunctionDecl(FunctionDecl *functionDecl)
 {
     const TypeLoc loc = functionDecl->getTypeSourceInfo()->getTypeLoc();
@@ -447,6 +486,8 @@ bool ExplorerRecursiveASTVisitor::VisitFunctionDecl(FunctionDecl *functionDecl)
     if (isInRange(range)) {
         done();
         addRefactoring(changeSignatureRefactoring(functionDecl));
+        addRefactoring(instanceToStaticRefactoring(functionDecl));
+        addRefactoring(moveFunctionRefactoring(functionDecl));
         // other options here...
     }
 

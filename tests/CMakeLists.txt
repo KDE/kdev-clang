@@ -123,6 +123,15 @@ ecm_add_test(test_refactoringmanager.cpp
         kdevclangrefactor
 )
 
+ecm_add_test(test_instancetostatic.cpp
+    TEST_NAME test_instancetostatic
+    LINK_LIBRARIES
+        KDev::Tests
+        Qt5::Test
+        refactorenv
+        kdevclangrefactor
+)
+
 endif()
 
 if(KDEVPLATFORM_JSONTESTS_LIBRARIES)

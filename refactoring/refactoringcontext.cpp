@@ -83,6 +83,11 @@ void RefactoringContext::reportError(const std::error_code &error)
     reportError(QString::fromStdString(error.message()));
 }
 
+void RefactoringContext::reportInformation(const QString &information)
+{
+    QMessageBox::information(nullptr, i18n("Information"), information);
+}
+
 void RefactoringContext::projectOpened(IProject *project)
 {
     Q_ASSERT(project);
