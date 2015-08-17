@@ -31,6 +31,13 @@
 #error Refactorings are enabled - do not use kdevrefactorings_disabled.h
 #endif
 
+/**
+ * Glue between KDevelop interfaces and refactorings implementation.
+ * It exists to separate refactorings (requiring Clang and quite fixed environment) and KDevelop.
+ *
+ * This is "disabled" version - provides API of standard @c KDevRefactorings implementation but
+ * its functions are effectively no-ops
+ */
 class KDevRefactorings : public QObject
 {
     // no Q_OBJECT here

@@ -28,6 +28,11 @@
 
 #include "refactoring.h"
 
+/**
+ * Extract variable from selected expression. Can embed new variable only in compound statements
+ * (blocks). This is "local refactoring" - changes are made only in one source file, immediately
+ * after @c invoke.
+ */
 class ExtractVariableRefactoring : public Refactoring
 {
 public:
@@ -37,6 +42,9 @@ public:
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
     virtual QString name() const override;
 
+    /**
+     * Essence of this refactoring, used from testing code
+     */
     clang::tooling::Replacements doRefactoring(const std::string &name);
 
 private:
@@ -53,6 +61,9 @@ namespace Refactorings
 {
 namespace ExtractVariable
 {
+/**
+ * Used from testing code
+ */
 clang::tooling::Replacements run(const std::string &filenameExpression,
                                  const std::string &expression,
                                  const std::string &filenameVariablePlacement,

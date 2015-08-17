@@ -25,9 +25,13 @@
 #include "refactoring.h"
 #include "redeclarationchain.h"
 
-/** change definition a::method to b::method (also change nested name spec)
- *  generate friend declaration
- *  change usages
+/**
+ * Move static functions from one class to another.
+ * Changes definition of A::method to B::method (references to A scope), generates friend
+ * delcaration in A (to allow references from new B::method), changes usages (call B::method
+ * instead of A::method).
+ * Current implementation is unable to transform function definition from class definition (inline).
+ * In such case manual fixes may be required.
  */
 class MoveFunctionRefactoring : public Refactoring
 {
@@ -43,6 +47,9 @@ public:
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
     virtual QString name() const override;
 
+    /**
+     * Essence of this refactoring
+     */
     clang::tooling::Replacements doRefactoring(clang::tooling::RefactoringTool &tool,
                                                const std::string &targetRecord);
 

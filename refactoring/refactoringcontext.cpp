@@ -38,6 +38,7 @@
 #include "kdevrefactorings.h"
 #include "documentcache.h"
 #include "refactoringcontext_worker.h"
+#include "refactoring.h"
 #include "utils.h"
 #include "debug.h"
 

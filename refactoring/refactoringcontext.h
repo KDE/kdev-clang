@@ -47,12 +47,26 @@ class KDevRefactorings;
 
 class DocumentCache;
 
-// TODO: join with DocumentCache, handle CompilationDatabase here
+/**
+ * Primary environment for all operations involving Clang (libTooling). Maintains coherence between
+ * KDevelop and Clang caches. Creates @c clang::tooling::RefactoringTool for refactoring actions.
+ * Helps in translation of refactoring results for KDevelop. Provides way to communicate with user
+ * (report errors/information) and schedule operations to be done asynchronously on worker thread
+ * (not to frezee GUI).
+ */
 class RefactoringContext : public QObject
 {
     Q_OBJECT;
     Q_DISABLE_COPY(RefactoringContext);
 
+    // TODO: join with DocumentCache, handle CompilationDatabase here
+    // TODO: Handle configuration of projects to regenerate CompilationDatabase
+    // TODO: Handle above + changes in files (also creation) to update RefactoringContext
+    // NOTE: The above is in progress ans takes place on separate branch ComposedCompilationDatabase
+
+    /**
+     * Private worker used to off-load long operations and remain GUI responding.
+     */
     class Worker;
 
 public:
@@ -60,18 +74,53 @@ public:
 
     KDevRefactorings *parent();
 
+    /**
+     * Translates KDevelop style cursor position (in given file!) to offset (Clang style cursor
+     * position).
+     * @note It works on file (whether on-disk or cached) and thus may fail.
+     */
     llvm::ErrorOr<unsigned> offset(const std::string &sourceFile,
                                    const KTextEditor::Cursor &position) const;
 
+    /**
+     * Reports error to user
+     */
     void reportError(const QString &errorMessage);
+
+    /**
+     * Reports error identified by @c std::error_code object
+     */
     void reportError(const std::error_code &error);
+
+    /**
+     * Reports information to user
+     */
     void reportInformation(const QString &information);
 
+    /**
+     * Schedules @p task to be run in background and @p callback to be invoked from this thread
+     * (main thread). @c RefactoringContext takes responsibility of creating
+     * @c clang::tooling::RefactoringTool initialized with cache, compilation database and on all
+     * translation units.
+     */
     template<typename Task, typename Callback>
     void schedule(Task task, Callback callback);
+
+    /**
+     * Schedules @p task to be run in background and @p callback to be invoked from this thread
+     * (main thread). @c RefactoringContext takes responsibility of creating
+     * @c clang::tooling::RefactoringTool initialized with cache, compilation database and on only
+     * @p filename as a translation unit. (to speed up)
+     * @note Used by @c RefactoringManager
+     */
     template<typename Task, typename Callback>
     void scheduleOnSingleFile(Task task, const std::string &filename, Callback callback);
-    // Convenience method on top of @c schedule
+
+    /**
+     * Convenience method on top of @c schedule. Schedules @p task to be done in background,
+     * displays modal dialog blocking (but not frezing) GUI. Returns result of @p task.
+     * @note It is designed to be used by implementation of refactorings.
+     */
     clang::tooling::Replacements scheduleRefactoring(
         std::function<clang::tooling::Replacements(clang::tooling::RefactoringTool &)> task);
 

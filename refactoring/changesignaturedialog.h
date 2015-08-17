@@ -29,6 +29,9 @@
 
 #include "changesignaturerefactoring.h"
 
+/**
+ * Dialog shown to user to get informations necessary for Change Signature refactoring.
+ */
 class ChangeSignatureDialog : public QDialog, private Ui::ChangeSignatureDialog
 {
     Q_OBJECT;

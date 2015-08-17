@@ -27,7 +27,9 @@
 class QAction;
 
 /**
- * Watches associated widgets and deletes action when last associated widget is destroyed
+ * Watches widgets associated to given @c QAction and deletes it when last widget is destroyed.
+ *
+ * NOTE: If @C QAction is removed from last widget (no destruction), it will be leaked.
  */
 class ActionWatcher : public QObject
 {

@@ -31,7 +31,10 @@
 class DocumentCache;
 
 /**
- * This class handles renaming of VerDecl AST node.
+ * This class handles renaming of VarDecl AST node.
+ *
+ * It may be considered to provide different handling for global vars (with linkage) and local
+ * (which can be refered from only on source file, like ParmVarDecl) to gain speed up in later case
  */
 class RenameVarDeclRefactoring : public Refactoring
 {
@@ -56,6 +59,9 @@ namespace Refactorings
 {
 namespace RenameVarDecl
 {
+/**
+ * Essence of this refactoring, used from testing code
+ */
 int run(const DeclarationComparator *declComparator, const std::string &newName,
         clang::tooling::RefactoringTool &tool);
 }

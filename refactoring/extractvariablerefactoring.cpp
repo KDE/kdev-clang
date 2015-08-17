@@ -87,6 +87,7 @@ ExtractVariableRefactoring::ExtractVariableRefactoring(const clang::Expr *expr,
 namespace
 {
 
+// Error handling...
 enum class Error
 {
     RefactoringErrorNoParentCompoundStmt,

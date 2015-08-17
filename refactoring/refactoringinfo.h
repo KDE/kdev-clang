@@ -28,11 +28,15 @@
 /**
  * This interface can be used to obtain basic information about some particular Refactoring action
  * implemented by this tool.
+ *
+ * This interface is designed to be used by UI builder to display user readable information
+ * and optionally to create instance of @c Refactoring.
+ *
+ * @note Currently @c Refactoring derives from this interface. It may be considered in future
+ * to add builder method to this interface returning instance of @c Refactoring instead.
  */
 class RefactoringInfo
 {
-    // this class can be used as factory for Refactoring (RefactoringManager would return
-    // list of RefactoringInfo which would be used to create Refactoring)
 public:
     virtual ~RefactoringInfo();
 
@@ -43,8 +47,6 @@ public:
      * @return Short human readable description
      */
     virtual QString name() const = 0;
-
-    // TODO: other methods as needed
 };
 
 

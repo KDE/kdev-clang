@@ -27,7 +27,11 @@
 
 #include "changesignaturerefactoring.h"
 
-// This form of changeset preserves source information where possible
+/**
+ * Wraps information about changes to be applied in Change Signature refactoring.
+ *
+ * @note This form of changeset preserves source information where possible
+ */
 class ChangeSignatureRefactoring::ChangePack
 {
 public:
@@ -37,6 +41,7 @@ public:
     // nagative value - param from m_newParam at (-v)-1 position
     std::vector<int> m_paramRefs;
     std::vector<std::tuple<std::string, std::string>> m_newParam;
+    // TODO: real changing of existing parameters (preserve information)
     // These are empty if not changed
     std::string m_newResult;
     std::string m_newName;

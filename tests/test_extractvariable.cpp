@@ -27,7 +27,6 @@
 #include "test_extractvariable.h"
 #include "refactoringenvironment.h"
 #include "../refactoring/extractvariablerefactoring.h"
-#include "../refactoring/error.h"
 
 using namespace std;
 using namespace clang;
@@ -143,8 +142,8 @@ void TestExtractVariable::testExtractError()
 
             auto error = refactoring->invoke(nullptr);
             QVERIFY(!error);
-            QVERIFY(error.getError() ==
-                    make_error_code(Error::RefactoringErrorNoParentCompoundStmt));
+            QVERIFY(strcmp(error.getError().category().name(),
+                           "RefactoringErrorNoParentCompoundStmt") == 0);
         }
     );
 }

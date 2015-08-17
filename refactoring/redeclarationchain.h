@@ -32,8 +32,10 @@
 #include "utils.h"
 
 /**
+ * Compare declarations using locations of their declarations.
  * Contains chain of (re)declarations of some declaration and checks if two declarations can
- * refer to the same lexical declaration
+ * refer to the same lexical declaration. It can be used to compare declarations with non-external
+ * linkage.
  */
 class RedeclarationChain : public DeclarationComparator
 {

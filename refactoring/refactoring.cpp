@@ -42,13 +42,14 @@ Refactoring::Refactoring(QObject *parent)
 
 llvm::ErrorOr<Replacements> Refactoring::cancelledResult()
 {
+    // Current implementation does not use any special marker value
     return Replacements{};
 }
 
 QDialog *Refactoring::newBusyDialog()
 {
     // Very simple placeholder
-    // TODO: progress bar and cancel button (this is not trivial task!)
+    // TODO: progress bar and cancel button (interruption...)
     QDialog *result = new QDialog();
     QVBoxLayout *layout = new QVBoxLayout();
     QLabel *label = new QLabel(i18n("Refactoring..."));

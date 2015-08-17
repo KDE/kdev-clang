@@ -6,7 +6,6 @@ set(SRCS
     documentcache.cpp
     refactoring.cpp
     refactoringinfo.cpp
-    nooprefactoring.cpp
     kdevrefactorings.cpp
     renamevardeclrefactoring.cpp
     refactoringcontext.cpp

@@ -26,13 +26,21 @@
 #include <clang/AST/DeclBase.h>
 
 /**
- * Can compare declarations of any kind
+ * Interface of comparators capable of deciding whether two declarations refer to the same entity.
+ *
+ * @note clang-c provides clang_getCursorUSR which does internally name mangling. It could be used
+ * to build general purpose comparator provided that it is possible to get to its implementation
+ * somehow (C++ implementation is in anonymous namespace but it is likely that Decl* can be
+ * "converted" somehow to something similar to cursor (cxcursor::))
  */
 class DeclarationComparator
 {
 public:
     virtual ~DeclarationComparator();
 
+    /**
+     * Compares to given @p decl. Returns true if @p decl refer to entity denoted by this comparator
+     */
     virtual bool equivalentTo(const clang::Decl *decl) const = 0;
 };
 

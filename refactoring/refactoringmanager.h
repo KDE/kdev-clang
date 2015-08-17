@@ -37,6 +37,16 @@
 
 class KDevRefactorings;
 
+/**
+ * Decides which refactorings are applicable "here".
+ *
+ * @note Design can be extended with external pool of refactorings (to decouple implementation of
+ * refactorings from this) initialized somehow (for example using static initialization in
+ * Curiously recurring template pattern version of @ Refactoring interface (after removing
+ * @c QObject base which disables use of templates in subclasses)). Task of this class would be to
+ * request run of @c ToolAction composed of "discovery" actions injected with @c Refactoring
+ * instance into pool.
+ */
 class RefactoringManager : public QObject
 {
     Q_OBJECT;
@@ -45,6 +55,12 @@ class RefactoringManager : public QObject
 public:
     RefactoringManager(KDevRefactorings *parent);
 
+    /**
+     * Initialize content of context menu with refactoring actions applicable "here".
+     *
+     * @note Discovery is a background operation, this function leaves placeholder and fills menu
+     * later @see ContextMenuMutator
+     */
     void fillContextMenu(KDevelop::ContextMenuExtension &extension,
                          KDevelop::EditorContext *context);
 
@@ -54,12 +70,12 @@ private:
 
 };
 
-// Manager workaround for single position
+// Manager workaround for single position (for testing)
 QVector<Refactoring *> refactoringsFor(const std::string &filename, unsigned offset,
                                        QThread *targetThread,
                                        clang::tooling::RefactoringTool &tool);
 
-// Manager workaround for range
+// Manager workaround for range (for testing)
 QVector<Refactoring *> refactoringsFor(const std::string &filename, unsigned offsetBegin,
                                        unsigned offsetEnd, QThread *targetThread,
                                        clang::tooling::RefactoringTool &tool);

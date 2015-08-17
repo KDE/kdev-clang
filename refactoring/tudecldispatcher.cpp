@@ -48,7 +48,7 @@ bool TUDeclDispatcher::equivalentImpl(const clang::DeclContext *declContext) con
 {
     auto asDecl = llvm::dyn_cast<clang::Decl>(declContext);
     Q_ASSERT(asDecl != nullptr);
-    // every (instance) decl context should be decl
+    // every (instance) of DeclContext should be a Decl
     // http://clang.llvm.org/doxygen/classclang_1_1DeclContext.html#details
     return equivalent(asDecl);
 }

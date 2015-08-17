@@ -25,6 +25,17 @@
 #include "refactoring.h"
 #include "redeclarationchain.h"
 
+/**
+ * Changes instance method to static method. Detects if "this" pointer is used from definition
+ * (also implicitly) and if so introduces new parameter - "explicit" "this" pointer. Changes calls
+ * appropriately.
+ *
+ * @note detection of "this" works only if definition is accessible in TU from which instance of
+ * this class is made.
+ * @note Definition of class shall be in only one file (header).
+ * @note detection of "this" does not work with recursive functions - in such cases "this" will
+ * always be made explicit.
+ */
 class InstanceToStaticRefactoring : public Refactoring
 {
     Q_OBJECT;
@@ -39,6 +50,9 @@ public:
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx);
     virtual QString name() const;
 
+    /**
+     * Essence of this refactoring, used from testing code
+     */
     clang::tooling::Replacements doRefactoring(clang::tooling::RefactoringTool &tool,
                                                const std::string &nameForThisPtr);
 

@@ -24,6 +24,11 @@
 
 #include "refactoring.h"
 
+/**
+ * Rename fields with external linkage (using qualified name as identifier).
+ *
+ * @note There are more reliable approaches to this problem...
+ */
 class RenameFieldDeclRefactoring : public Refactoring
 {
     Q_OBJECT;
@@ -43,6 +48,9 @@ namespace Refactorings
 {
 namespace RenameFieldDecl
 {
+/**
+ * Essence of this refactoring, used from testing code
+ */
 int run(const std::string oldQualName, const std::string &newName,
         clang::tooling::RefactoringTool &clangTool);
 }

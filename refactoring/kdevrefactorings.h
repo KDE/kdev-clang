@@ -34,14 +34,17 @@
 #include <interfaces/context.h>
 #include <interfaces/iproject.h>
 
-#include "refactoring.h"
-
 class ClangSupport;
-
+class RefactoringContext;
 class RefactoringManager;
 
 /**
- * Glue between KDevelop (QObject based) interfaces and refactorings (interface)
+ * Glue between KDevelop interfaces and refactorings implementation.
+ * It exists to separate refactorings (requiring Clang and quite fixed environment) and KDevelop.
+ *
+ * This is "active" version - maintains two main object of refactoring implementation:
+ * @c RefactoringContext and @c RefactoringManager. Forwards selected API requests to underlying
+ * objects. (currently only @c fillContextMenu)
  */
 class KDevRefactorings : public QObject
 {
@@ -53,10 +56,12 @@ public:
 
     ClangSupport *parent();
 
+    /**
+     * Hooked into @fillContextMenu of general @c IPlugin interface (in @c ClangSupport).
+     * Its task is to populate context menu with some content (in this case possible refactoring
+     * operations)
+     */
     void fillContextMenu(KDevelop::ContextMenuExtension &extension, KDevelop::Context *context);
-
-    // TODO: Handle configuration of projects to regenerate CompilationDatabase
-    // TODO: Handle above + changes in files (also creation) to update/regenerate RefactoringsContext
 
     RefactoringContext *refactoringContext()
     {

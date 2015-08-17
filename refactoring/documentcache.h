@@ -49,6 +49,9 @@ class RefactoringContext;
 
 /**
  * Implementation of documents cache for use with libTooling
+ *
+ * @note deprecated, integrate with @c RefactoringContext, try to get rid of it when possible
+ * @note it is part of core refactorings, used indirectly from many places
  */
 class DocumentCache : public QObject
 {

@@ -24,6 +24,11 @@
 
 #include "refactoring.h"
 
+/**
+ * Rename fields with non-external linkage (using declaration location as identifier).
+ *
+ * @note There are more reliable approaches to this problem...
+ */
 class RenameFieldDeclTURefactoring : public Refactoring
 {
     Q_OBJECT;
@@ -46,6 +51,9 @@ namespace Refactorings
 {
 namespace RenameFieldTuDecl
 {
+/**
+ * Essence of this refactoring, used from testing code
+ */
 int run(const std::string fileName, unsigned fileOffset, const std::string &newName,
         clang::tooling::RefactoringTool &clangTool);
 }

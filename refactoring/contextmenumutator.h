@@ -39,11 +39,18 @@ class RefactoringManager;
 
 class Refactoring;
 
+/**
+ * Object of this class is used to enable delayed initialization of context menu with refactoring
+ * actions by @c RefactoringManager.
+ */
 class ContextMenuMutator : public QObject
 {
     Q_OBJECT;
     Q_DISABLE_COPY(ContextMenuMutator);
 public:
+    /**
+     * Initializes context menu with placeholder
+     */
     ContextMenuMutator(KDevelop::ContextMenuExtension &extension, RefactoringManager *parent);
 
     RefactoringManager *parent();
@@ -52,6 +59,10 @@ private:
     QWidget *menuForWidget(QWidget *widget);
 
 public slots:
+    /**
+     * Fills context menu with real content - list of applicable refactorings.
+     * It also removes placeholder from menu.
+     */
     void endFillingContextMenu(const QVector<Refactoring *> &refactorings);
 
 private:

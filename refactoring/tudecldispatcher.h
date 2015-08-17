@@ -32,7 +32,7 @@
 class DeclarationComparator;
 
 /**
- * Helps in making decision if given declarations are syntactically equivalent
+ * Wraps bare @c DeclarationComparator with more flexible interface and adds cache.
  */
 class TUDeclDispatcher
 {

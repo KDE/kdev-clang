@@ -38,9 +38,10 @@ class SymbolPart;
 /**
  * Contains syntactic symbol declaration. Designed to operate on symbols with External Linkage.
  * Can be used everywhere (for all kinds of symbols, not only external), but is slow and its
- * behavior depends on rewrite of scoping and redeclaration rules.
+ * behavior depends on rewrite of scoping and redeclaration rules. It is basically similar idea
+ * to Unified Symbol Resolution from libClang.
  *
- * Try to keep in sync with C++ std
+ * It is kind of heuristic, try to keep in sync with C++ std
  */
 class DeclarationSymbol : public DeclarationComparator
 {

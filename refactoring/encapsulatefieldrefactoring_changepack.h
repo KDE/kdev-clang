@@ -32,6 +32,9 @@
 
 #include "encapsulatefieldrefactoring.h"
 
+/**
+ * Wraps information provided by user.
+ */
 class EncapsulateFieldRefactoring::ChangePack
 {
 public:

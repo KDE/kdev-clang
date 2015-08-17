@@ -27,6 +27,9 @@
 
 #include "refactoring.h"
 
+/**
+ * Changes signature of selected function and adapts uses.
+ */
 class ChangeSignatureRefactoring : public Refactoring
 {
     Q_OBJECT;
@@ -55,6 +58,9 @@ namespace ChangeSignature
 using InfoPack = ChangeSignatureRefactoring::InfoPack;
 using ChangePack = ChangeSignatureRefactoring::ChangePack;
 
+/**
+ * Essence of this refactoring, used from testing code
+ */
 int run(const InfoPack *infoPack, const ChangePack *changePack,
         clang::tooling::RefactoringTool &tool);
 }

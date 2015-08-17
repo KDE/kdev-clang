@@ -33,6 +33,9 @@
 
 class DeclarationComparator;
 
+/**
+ * Wraps information about function signature in Change Signature refactoring.
+ */
 class ChangeSignatureRefactoring::InfoPack
 {
 public:

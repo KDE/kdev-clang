@@ -27,6 +27,9 @@
 #include "encapsulatefieldrefactoring.h"
 #include "ui_encapsulatefielddialog.h"
 
+/**
+ * Dialog shown to user to get informations necessary for Encapsulate Field refactoring.
+ */
 class EncapsulateFieldDialog : public QDialog, private Ui::EncapsulateFieldDialog
 {
     Q_OBJECT;

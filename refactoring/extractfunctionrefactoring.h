@@ -28,6 +28,11 @@
 
 #include "refactoring.h"
 
+/**
+ * Extract function from selected expression. Can embed new function only in DeclContext
+ * (places in which declaration may appear). This is "local refactoring" - changes are made only
+ * in one source file, immediately after @c invoke.
+ */
 class ExtractFunctionRefactoring : public Refactoring
 {
     Q_OBJECT;

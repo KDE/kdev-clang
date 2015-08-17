@@ -38,29 +38,63 @@ class QDialog;
 class DocumentCache;
 
 /**
- * Wraps interface of single refactoring action. Objects will be used to perform refactoring action
+ * Wraps interface of single refactoring action. Objects will be used to perform refactoring action.
+ *
+ * Currently it is an abstract class deriving from @c QObject and @c RefactoringInfo.
+ * @c QObject base is used to manage lifetime of "@c RefactoringInfo part". It may be considered
+ * to remove these base classes and extend @c RefactoringInfo interface with factory method for
+ * @c Refactoring class and @c QObject base to maintain lifetime of instances. It turned out that
+ * @c QObject base is not actually necessary for implementation of refactorings.
  */
 class Refactoring : public QObject, public RefactoringInfo
 {
     Q_OBJECT;
     Q_DISABLE_COPY(Refactoring);
 
+    /**
+     * @c scheduleRefactoring uses busy dialog and @c uiLockerCallback
+     */
     friend clang::tooling::Replacements RefactoringContext::scheduleRefactoring(
         std::function<clang::tooling::Replacements(clang::tooling::RefactoringTool &)>);
 
-    // TODO: interface as needed
 public:
     Refactoring(QObject *parent);
 
+    /**
+     * Entry point for given refactoring action implementation. When user decide to use this
+     * refactoring, @c invoke is called with instance of @c RefactoringContext ready to use
+     * by implementation. It is called on GUI thread - long operations should be performed
+     * in background using @c RefactoringContext::scheduleRefactoring (or other method from
+     * @c RefactoringContext). When finished it shall return @c clang::tooling::Replacements
+     * (on success) or @c std::error_code (on failure).
+     */
     virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) = 0;
-    // TODO: {Location,What} union
 
 protected:
-    static llvm::ErrorOr<clang::tooling::Replacements> cancelledResult();  // Returned on cancel
-    // TODO: Returned on interrupt (implement with care!)
+    /**
+     * Implementation can use this helper method if user decided to cancel operation to get
+     * "marked" retrun value to return from @c invoke (so that it can be used by backend to
+     * perceive this intention).
+     *
+     * @note Current implementation does not mark and return empty @c clang::tooling::Replacements
+     */
+    static llvm::ErrorOr<clang::tooling::Replacements> cancelledResult();
 
-    /// GUI placeholder when refactoring action takes place and UI should be blocked
+    /* TODO: interruptedResult - it is desirable to support interruption of refactoring operation.
+     * (implementation of interruption mechanism is not trivial task!)
+     */
+
+    /**
+     * GUI placeholder (modal dialog) when refactoring action takes place and UI should be blocked.
+     * @todo button to interrupt (as part of interruption mechanism)
+     */
     static QDialog *newBusyDialog();
+
+    /**
+     * Creates @c RefactoringContext::schedule compatible callback used in conjunction with modal
+     * dialog ("locking ui") and storing result of refactoring action in given
+     * @c clang::tooling::Replacements object.
+     */
     static std::function<void(clang::tooling::Replacements)> uiLockerCallback(
         QDialog *uiLocker, clang::tooling::Replacements &result);
 };
