@@ -22,6 +22,7 @@
 // Qt
 #include <QAction>
 #include <QMenu>
+#include <QEvent>
 
 // KF5
 #include <KF5/KI18n/klocalizedstring.h>
@@ -39,10 +40,28 @@
 #include "actionwatcher.h"
 #include "refactoringcontext.h"
 #include "utils.h"
+#include "debug.h"
 
 using namespace clang;
 using namespace clang::tooling;
 using namespace KDevelop;
+
+namespace
+{
+// Watches for hide event on menu to delete submenu
+class EventFilter : public QObject
+{
+    Q_OBJECT;
+    Q_DISABLE_COPY(EventFilter);
+
+public:
+    EventFilter(QMenu *submenu);
+
+    QMenu *parent();
+
+    virtual bool eventFilter(QObject *object, QEvent *event) override;
+};
+}
 
 ContextMenuMutator::ContextMenuMutator(ContextMenuExtension &extension, RefactoringManager *parent)
     : QObject(parent)
@@ -85,6 +104,8 @@ QWidget *ContextMenuMutator::menuForWidget(QWidget *widget)
             // make submenu
             QMenu *submenu = new QMenu(i18n("Refactor"), menu);
             menu->insertMenu(m_placeholder, submenu);
+            EventFilter *filter = new EventFilter(submenu);
+            menu->installEventFilter(filter);
             return submenu;
         }
     } else {
@@ -125,3 +146,26 @@ void ContextMenuMutator::endFillingContextMenu(const QVector<Refactoring *> &ref
     }
     deleteLater();
 }
+
+
+EventFilter::EventFilter(QMenu *submenu)
+    : QObject(submenu)
+{
+}
+
+QMenu *EventFilter::parent()
+{
+    return static_cast<QMenu *>(QObject::parent());
+}
+
+bool EventFilter::eventFilter(QObject *object, QEvent *event)
+{
+    Q_UNUSED(object);
+    if (event->type() == QEvent::Hide) {
+        QMenu *submenu = parent();
+        submenu->deleteLater();
+    }
+    return false;
+}
+
+#include "contextmenumutator.moc"

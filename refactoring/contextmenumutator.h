@@ -49,7 +49,7 @@ public:
     RefactoringManager *parent();
 
 private:
-    QWidget* menuForWidget(QWidget *widget);
+    QWidget *menuForWidget(QWidget *widget);
 
 public slots:
     void endFillingContextMenu(const QVector<Refactoring *> &refactorings);
