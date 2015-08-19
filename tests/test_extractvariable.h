@@ -31,6 +31,8 @@ class TestExtractVariable : public QObject
 private slots:
     void testExtractLocal();
     void testExtractField();
+    void testExtractFullLocal();
+    void testExtractError();
 };
 
 

@@ -27,6 +27,7 @@
 #include "test_extractvariable.h"
 #include "refactoringenvironment.h"
 #include "../refactoring/extractvariablerefactoring.h"
+#include "../refactoring/error.h"
 
 using namespace std;
 using namespace clang;
@@ -68,7 +69,7 @@ void TestExtractVariable::testExtractField()
     string code = R"(class C
                      {
                        int field = 2+2*2;
-                     })";
+                     };)";
     env.addFile(filename, code);
 
     string expression = "2+2";
@@ -84,5 +85,66 @@ void TestExtractVariable::testExtractField()
                         {
                             int mySum = 2+2;
                             int field = mySum*2;
+                        };)");
+}
+
+void TestExtractVariable::testExtractFullLocal()
+{
+    RefactoringEnvironment env("-std=c++11");
+    string filename = "source.cpp";
+    string code = R"(int f()
+                     {
+                       return 2+2*2;
+                     })";
+    env.addFile(filename, code);
+
+    Replacements replacements;
+    env.findNode<BinaryOperator>(
+        [](const BinaryOperator *op)
+        {
+            return op->getOpcode() == BO_Mul;
+        },
+        [&replacements](const BinaryOperator *op, ASTContext *astContext)
+        {
+            ExtractVariableRefactoring *refactoring =
+                new ExtractVariableRefactoring(op, astContext, &astContext->getSourceManager());
+
+            replacements = refactoring->doRefactoring("myProduct");
+        }
+    );
+
+    env.verifyResult(replacements, filename,
+                     R"(int f()
+                        {
+                            int myProduct = 2*2;
+                            return 2+myProduct;
                         })");
+}
+
+void TestExtractVariable::testExtractError()
+{
+    RefactoringEnvironment env("-std=c++11");
+    string filename = "source.cpp";
+    string code = R"(class C
+                     {
+                       int field = 2+2*2;
+                     };)";
+    env.addFile(filename, code);
+
+    env.findNode<BinaryOperator>(
+        [](const BinaryOperator *op)
+        {
+            return op->getOpcode() == BO_Mul;
+        },
+        [](const BinaryOperator *op, ASTContext *astContext)
+        {
+            ExtractVariableRefactoring *refactoring =
+                new ExtractVariableRefactoring(op, astContext, &astContext->getSourceManager());
+
+            auto error = refactoring->invoke(nullptr);
+            QVERIFY(!error);
+            QVERIFY(error.getError() ==
+                    make_error_code(Error::RefactoringErrorNoParentCompoundStmt));
+        }
+    );
 }
