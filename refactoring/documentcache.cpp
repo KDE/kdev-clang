@@ -45,18 +45,7 @@ clang::tooling::RefactoringTool &DocumentCache::refactoringTool()
         m_dirty = false;
         const auto ctx = static_cast<RefactoringContext *>(parent());
         m_refactoringTool = makeRefactoringTool(*ctx->database, ctx->database->getAllFiles());
-        for (auto document : ICore::self()->documentController()->openDocuments()) {
-            KTextEditor::Document *textDocument = document->textDocument();
-            if (textDocument == nullptr) {
-                continue;
-            }
-            auto obj = cpp::make_unique<std::pair<std::string, std::string>>(
-                document->url().toLocalFile().toStdString(),
-                textDocument->text().toStdString());
-            llvm::StringRef key = obj->first;
-            m_data[key] = std::move(obj);
-            m_refactoringTool->mapVirtualFile(m_data[key]->first, m_data[key]->second);
-        }
+        initializeCacheInRefactoringTool(*m_refactoringTool);
     }
     return *m_refactoringTool.get();
 }
@@ -75,7 +64,7 @@ clang::tooling::RefactoringTool DocumentCache::refactoringToolForFile(
                          return llvm::sys::fs::equivalent(file, fileName);
                      }) != files.end()) {
         auto result = clang::tooling::RefactoringTool(*ctx->database, {fileName});
-        result.mapVirtualFile(fileName, contentOfOpenedFile(fileName));
+        initializeCacheInRefactoringTool(result);
         return result;
     } else {
         return refactoringTool();   // a copy of
@@ -88,6 +77,22 @@ void DocumentCache::handleDocumentModified(KDevelop::IDocument *document)
     m_refactoringTool.reset();
     m_data.clear();
     m_cachedFiles.erase(document->url().toLocalFile().toStdString());
+}
+
+void DocumentCache::initializeCacheInRefactoringTool(clang::tooling::RefactoringTool &tool)
+{
+    for (auto document : ICore::self()->documentController()->openDocuments()) {
+        KTextEditor::Document *textDocument = document->textDocument();
+        if (!textDocument) {
+            continue;
+        }
+        auto obj = cpp::make_unique<std::pair<std::string, std::string>>(
+            document->url().toLocalFile().toStdString(),
+            textDocument->text().toStdString());
+        llvm::StringRef key = obj->first;
+        m_data[key] = std::move(obj);
+        tool.mapVirtualFile(m_data[key]->first, m_data[key]->second);
+    }
 }
 
 bool DocumentCache::fileIsOpened(llvm::StringRef fileName) const
