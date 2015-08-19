@@ -26,6 +26,7 @@
 #include "includepathcompletioncontext.h"
 
 #include "duchain/parsesession.h"
+#include "duchain/clangindex.h"
 
 #include <language/codecompletion/codecompletionworker.h>
 #include <language/duchain/topducontext.h>
@@ -44,14 +45,14 @@ namespace {
 bool includePathCompletionRequired(const QString& text)
 {
     QString line;
-    const int idx = text.lastIndexOf('\n');
+    const int idx = text.lastIndexOf(QLatin1Char('\n'));
     if (idx != -1) {
         line = text.mid(idx + 1).trimmed();
     } else {
         line = text.trimmed();
     }
 
-    const static QRegularExpression includeRegExp("^\\s*#\\s*include");
+    const static QRegularExpression includeRegExp(QStringLiteral("^\\s*#\\s*include"));
     if (!line.contains(includeRegExp)) {
         return false;
     }
@@ -59,16 +60,17 @@ bool includePathCompletionRequired(const QString& text)
     return true;
 }
 
-QSharedPointer<CodeCompletionContext> createCompletionContext(const KDevelop::DUContextPointer& context,
+QSharedPointer<CodeCompletionContext> createCompletionContext(const DUContextPointer& context,
                                                               const ParseSessionData::Ptr& session,
                                                               const QUrl& url,
                                                               const KTextEditor::Cursor& position,
-                                                              const QString& text)
+                                                              const QString& text,
+                                                              const QString& followingText)
 {
     if (includePathCompletionRequired(text)) {
         return QSharedPointer<IncludePathCompletionContext>::create(context, session, url, position, text);
     } else {
-        return QSharedPointer<ClangCodeCompletionContext>::create(context, session, url, position, text);
+        return QSharedPointer<ClangCodeCompletionContext>::create(context, session, url, position, text + followingText);
     }
 }
 
@@ -76,13 +78,14 @@ class ClangCodeCompletionWorker : public CodeCompletionWorker
 {
     Q_OBJECT
 public:
-    ClangCodeCompletionWorker(CodeCompletionModel* model)
+    ClangCodeCompletionWorker(ClangIndex* index, CodeCompletionModel* model)
         : CodeCompletionWorker(model)
+        , m_index(index)
     {}
     virtual ~ClangCodeCompletionWorker() = default;
 
 public slots:
-    void completionRequested(const QUrl &url, const KTextEditor::Cursor& position, const QString& text)
+    void completionRequested(const QUrl &url, const KTextEditor::Cursor& position, const QString& text, const QString& followingText)
     {
         aborting() = false;
 
@@ -101,7 +104,17 @@ public slots:
         // We hold DUChain lock, and ask for ParseSession, but TUDUChain indirectly holds ParseSession lock.
         lock.unlock();
 
-        const ParseSessionData::Ptr sessionData(dynamic_cast<ParseSessionData*>(top->ast().data()));
+        ParseSessionData::Ptr sessionData(dynamic_cast<ParseSessionData*>(top->ast().data()));
+        if (!sessionData) {
+            // ask the TU to which we are pinned, if available
+            const auto tuUrl = m_index->translationUnitForUrl(top->url());
+            if (tuUrl != top->url()) {
+                auto tu = DUChainUtils::standardContextForUrl(tuUrl.toUrl());
+                if (tu) {
+                    sessionData = dynamic_cast<ParseSessionData*>(tu->ast().data());
+                }
+            }
+        }
         if (!sessionData) {
             // TODO: trigger reparse and re-request code completion
             qCWarning(KDEV_CLANG) << "No parse session / AST attached to context for url" << url;
@@ -113,7 +126,7 @@ public slots:
             return;
         }
 
-        auto completionContext = ::createCompletionContext(DUContextPointer(top), sessionData, url, position, text);
+        auto completionContext = ::createCompletionContext(DUContextPointer(top), sessionData, url, position, text, followingText);
 
         lock.lock();
         if (aborting()) {
@@ -143,11 +156,14 @@ public slots:
 
         foundDeclarations( tree, {} );
     }
+private:
+    ClangIndex* m_index;
 };
 }
 
-ClangCodeCompletionModel::ClangCodeCompletionModel(QObject* parent)
+ClangCodeCompletionModel::ClangCodeCompletionModel(ClangIndex* index, QObject* parent)
     : CodeCompletionModel(parent)
+    , m_index(index)
 {
     qRegisterMetaType<KTextEditor::Cursor>();
 }
@@ -159,7 +175,7 @@ ClangCodeCompletionModel::~ClangCodeCompletionModel()
 
 CodeCompletionWorker* ClangCodeCompletionModel::createCompletionWorker()
 {
-    auto worker = new ClangCodeCompletionWorker(this);
+    auto worker = new ClangCodeCompletionWorker(m_index, this);
     connect(this, &ClangCodeCompletionModel::requestCompletion,
             worker, &ClangCodeCompletionWorker::completionRequested);
     return worker;
@@ -168,9 +184,9 @@ CodeCompletionWorker* ClangCodeCompletionModel::createCompletionWorker()
 void ClangCodeCompletionModel::completionInvokedInternal(KTextEditor::View* view, const KTextEditor::Range& range,
                                                          CodeCompletionModel::InvocationType /*invocationType*/, const QUrl &url)
 {
-    // get text before this range so we can parse this version with clang
     auto text = view->document()->text({0, 0, range.start().line(), range.start().column()});
-    emit requestCompletion(url, KTextEditor::Cursor(range.start()), text);
+    auto followingText = view->document()->text({{range.start().line(), range.start().column()}, view->document()->documentEnd()});
+    emit requestCompletion(url, KTextEditor::Cursor(range.start()), text, followingText);
 }
 
 #include "model.moc"

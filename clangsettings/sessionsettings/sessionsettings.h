@@ -1,5 +1,7 @@
 /*
- * Copyright 2014 Kevin Funk <kfunk@kde.org>
+ * This file is part of KDevelop
+ *
+ * Copyright 2015 Sergey Kalinichev <kalinichev.so.0@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -19,17 +21,37 @@
  *
  */
 
-#ifndef CLANGDIAGNOSTICEVALUATOR_H
-#define CLANGDIAGNOSTICEVALUATOR_H
+#ifndef SESSIONSETTINGS_H
+#define SESSIONSETTINGS_H
 
-#include <duchain/clangduchainexport.h>
+#include <interfaces/configpage.h>
 
-#include <clang-c/Index.h>
+#include <QScopedPointer>
 
-class ClangProblem;
-
-namespace ClangDiagnosticEvaluator {
-KDEVCLANGDUCHAIN_EXPORT ClangProblem* createProblem(CXDiagnostic diagnostic, CXTranslationUnit unit);
+namespace Ui
+{
+    class SessionSettings;
 }
 
-#endif // CLANGDIAGNOSTICEVALUATOR_H
+class SessionSettings: public KDevelop::ConfigPage
+{
+    Q_OBJECT
+public:
+    explicit SessionSettings(QWidget* parent);
+    ~SessionSettings();
+
+    QString name() const override;
+    QString fullName() const override;
+    QIcon icon() const override;
+
+    KDevelop::ConfigPage::ConfigPageType configPageType() const override;
+
+    void apply() override;
+    void reset() override;
+
+private:
+    QScopedPointer<Ui::SessionSettings> m_settings;
+
+};
+
+#endif // SESSIONSETTINGS_H

@@ -1,5 +1,7 @@
 /*
- * Copyright 2014 Kevin Funk <kfunk@kde.org>
+ * This file is part of KDevelop
+ *
+ * Copyright 2015 Sergey Kalinichev <kalinichev.so.0@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -19,17 +21,23 @@
  *
  */
 
-#ifndef CLANGDIAGNOSTICEVALUATOR_H
-#define CLANGDIAGNOSTICEVALUATOR_H
+#ifndef SESSIONCONFIGSKELETON_H
+#define SESSIONCONFIGSKELETON_H
 
-#include <duchain/clangduchainexport.h>
+#include <kconfigskeleton.h>
 
-#include <clang-c/Index.h>
+#include <interfaces/icore.h>
+#include <interfaces/isession.h>
 
-class ClangProblem;
+using namespace KDevelop;
 
-namespace ClangDiagnosticEvaluator {
-KDEVCLANGDUCHAIN_EXPORT ClangProblem* createProblem(CXDiagnostic diagnostic, CXTranslationUnit unit);
-}
+class SessionConfigSkeleton : public KConfigSkeleton
+{
+public:
+    SessionConfigSkeleton( const QString& )
+        : KConfigSkeleton( ICore::self()->activeSession()->config() )
+    {
+    }
+};
 
-#endif // CLANGDIAGNOSTICEVALUATOR_H
+#endif

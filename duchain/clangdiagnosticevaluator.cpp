@@ -50,32 +50,28 @@ bool isDeclarationProblem(CXDiagnostic diagnostic)
      */
 
     QString description = ClangString(clang_getDiagnosticSpelling(diagnostic)).toString();
-    return description.startsWith( "use of undeclared identifier" )
-           || description.startsWith( "no member named" )
-           || description.startsWith( "unknown type name" )
-           || description.startsWith( "variable has incomplete type" );
+    return description.startsWith( QLatin1String("use of undeclared identifier") )
+           || description.startsWith( QLatin1String("no member named") )
+           || description.startsWith( QLatin1String("unknown type name") )
+           || description.startsWith( QLatin1String("variable has incomplete type") );
 }
 
 /// @return true if @p diagnostic says that include file not found
 bool isIncludeFileNotFound(CXDiagnostic diagnostic)
 {
-    return ClangString(clang_getDiagnosticSpelling(diagnostic)).toString().endsWith("file not found");
+    return ClangString(clang_getDiagnosticSpelling(diagnostic)).toString().endsWith(QLatin1String("file not found"));
 }
 
 }
 
-ClangDiagnosticEvaluator::ClangDiagnosticEvaluator()
-{
-}
-
-ClangProblem* ClangDiagnosticEvaluator::createProblem(CXDiagnostic diagnostic) const
+ClangProblem* ClangDiagnosticEvaluator::createProblem(CXDiagnostic diagnostic, CXTranslationUnit unit)
 {
     if (isDeclarationProblem(diagnostic)) {
-        return new UnknownDeclarationProblem(diagnostic);
+        return new UnknownDeclarationProblem(diagnostic, unit);
     } else if(isIncludeFileNotFound(diagnostic)){
-        return new MissingIncludePathProblem(diagnostic);
+        return new MissingIncludePathProblem(diagnostic, unit);
     }
 
-    return new ClangProblem(diagnostic);
+    return new ClangProblem(diagnostic, unit);
 }
 

@@ -31,22 +31,27 @@
 Q_DECLARE_METATYPE(KTextEditor::Cursor)
 #endif
 
+class ClangIndex;
+
 class ClangCodeCompletionModel : public KDevelop::CodeCompletionModel
 {
     Q_OBJECT
 
 public:
-    explicit ClangCodeCompletionModel(QObject* parent);
+    explicit ClangCodeCompletionModel(ClangIndex* index, QObject* parent);
     virtual ~ClangCodeCompletionModel();
 
 signals:
-    void requestCompletion(const QUrl &url, const KTextEditor::Cursor& cursor, const QString& text);
+    void requestCompletion(const QUrl &url, const KTextEditor::Cursor& cursor, const QString& text, const QString& followingText);
 
 protected:
     KDevelop::CodeCompletionWorker* createCompletionWorker() override;
 
     void completionInvokedInternal(KTextEditor::View* view, const KTextEditor::Range& range,
                                    InvocationType invocationType, const QUrl &url) override;
+
+private:
+    ClangIndex* m_index;
 };
 
 #endif // CLANGCODECOMPLETIONMODEL_H

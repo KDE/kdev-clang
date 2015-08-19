@@ -2,6 +2,7 @@
  * Copyright 2014  David Stevens <dgedstevens@gmail.com>
  * Copyright 2014  Kevin Funk <kfunk@kde.org>
  * Copyright 2015 Milian Wolff <mail@milianw.de>
+ * Copyright 2015 Sergey Kalinichev <kalinichev.so.0@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -35,6 +36,7 @@
 #include "codecompletion/completionhelper.h"
 #include "codecompletion/context.h"
 #include "codecompletion/includepathcompletioncontext.h"
+#include "../clangsettings/clangsettingsmanager.h"
 
 #include <KTextEditor/Editor>
 #include <KTextEditor/Document>
@@ -65,12 +67,44 @@ struct CompletionItems {
 Q_DECLARE_TYPEINFO(CompletionItems, Q_MOVABLE_TYPE);
 Q_DECLARE_METATYPE(CompletionItems);
 
+
+struct CompletionPriorityItem
+{
+    CompletionPriorityItem(const QString name, int matchQuality = 0, int inheritanceDepth = 0, const QString failMessage = {})
+        : name(name)
+        , failMessage(failMessage)
+        , matchQuality(matchQuality)
+        , inheritanceDepth(inheritanceDepth)
+    {}
+
+    QString name;
+    QString failMessage;
+    int matchQuality;
+    int inheritanceDepth;
+};
+
+struct CompletionPriorityItems : public CompletionItems
+{
+    CompletionPriorityItems(){}
+    CompletionPriorityItems(const KTextEditor::Cursor& position, const QList<CompletionPriorityItem>& completions)
+        : CompletionItems(position, {})
+        , completions(completions)
+    {};
+
+    QList<CompletionPriorityItem> completions;
+};
+
+Q_DECLARE_TYPEINFO(CompletionPriorityItems, Q_MOVABLE_TYPE);
+Q_DECLARE_METATYPE(CompletionPriorityItems);
+
 void TestCodeCompletion::initTestCase()
 {
     QLoggingCategory::setFilterRules(QStringLiteral("*.debug=false\ndefault.debug=true\nkdevelop.plugins.clang.debug=true\n"));
     QVERIFY(qputenv("KDEV_DISABLE_PLUGINS", "kdevcppsupport"));
     AutoTestShell::init();
     TestCore::initialize(Core::NoUi);
+
+    ClangSettingsManager::self()->m_enableTesting = true;
 }
 
 void TestCodeCompletion::cleanupTestCase()
@@ -117,7 +151,49 @@ void executeCompletionTest(const QString& code, const CompletionItems& expectedC
     }
 
     tester.names.sort();
+    QEXPECT_FAIL("look-ahead function primary type argument", "No API in LibClang to determine expected code completion type", Continue);
+    QEXPECT_FAIL("look-ahead template parameter substitution", "No parameters substitution so far", Continue);
+    QEXPECT_FAIL("look-ahead auto item", "Auto type, like many other types, is not exposed through LibClang. We assign DelayedType to it instead of IdentifiedType", Continue);
     QCOMPARE(tester.names, expectedCompletionItems.completions);
+}
+
+void executeCompletionPriorityTest(const QString& code, const CompletionPriorityItems& expectedCompletionItems,
+                           const ClangCodeCompletionContext::ContextFilters& filters = ClangCodeCompletionContext::ContextFilters(
+                                ClangCodeCompletionContext::NoBuiltins |
+                                ClangCodeCompletionContext::NoMacros))
+{
+    TestFile file(code, "cpp");
+    QVERIFY(file.parseAndWait(TopDUContext::AllDeclarationsContextsUsesAndAST));
+    DUChainReadLocker lock;
+    auto top = file.topContext();
+    QVERIFY(top);
+    const ParseSessionData::Ptr sessionData(dynamic_cast<ParseSessionData*>(top->ast().data()));
+    QVERIFY(sessionData);
+
+    DUContextPointer topPtr(top);
+
+    // don't hold DUChain lock when constructing ClangCodeCompletionContext
+    lock.unlock();
+
+    auto context = new ClangCodeCompletionContext(topPtr, sessionData, file.url().toUrl(), expectedCompletionItems.position, QString());
+    context->setFilters(filters);
+
+    lock.lock();
+    auto tester = ClangCodeCompletionItemTester(QExplicitlySharedDataPointer<ClangCodeCompletionContext>(context));
+
+    for(const auto& declaration : expectedCompletionItems.completions){
+        const auto declarationItem = tester.findItem(declaration.name);
+        QVERIFY(declarationItem);
+        QVERIFY(declarationItem->declaration());
+
+        auto matchQuality = tester.itemData(declarationItem, KTextEditor::CodeCompletionModel::Name, KTextEditor::CodeCompletionModel::MatchQuality).toInt();
+        auto inheritanceDepth = declarationItem->inheritanceDepth();
+
+        if(!declaration.failMessage.isEmpty()){
+            QEXPECT_FAIL("", declaration.failMessage.toUtf8().constData(), Continue);
+        }
+        QVERIFY(matchQuality == declaration.matchQuality && inheritanceDepth == declaration.inheritanceDepth);
+    }
 }
 
 using IncludeTester = CodeCompletionItemTester<IncludePathCompletionContext>;
@@ -254,6 +330,86 @@ void TestCodeCompletion::testClangCodeCompletion_data()
         << CompletionItems{{1, 0}, {
             "Abc",
             "f",
+        }};
+    QTest::newRow("look-ahead int")
+        << "struct LookAhead { int intItem;}; int main() {LookAhead* pInstance; LookAhead instance; int i =\n }"
+        << CompletionItems{{1, 0}, {
+            "LookAhead", "i", "instance",
+            "instance.intItem", "main",
+            "pInstance", "pInstance->intItem",
+        }};
+    QTest::newRow("look-ahead class")
+        << "class Class{}; struct LookAhead {Class classItem;}; int main() {LookAhead* pInstance; LookAhead instance; Class cl =\n }"
+        << CompletionItems{{1, 0}, {
+            "Class", "LookAhead", "cl",
+            "instance", "instance.classItem",
+            "main", "pInstance", "pInstance->classItem",
+        }};
+    QTest::newRow("look-ahead function argument")
+        << "class Class{}; struct LookAhead {Class classItem;}; void function(Class cl);"
+           "int main() {LookAhead* pInstance; LookAhead instance; function(\n }"
+        << CompletionItems{{1, 0}, {
+            "Class", "LookAhead", "function",
+            "instance", "instance.classItem",
+            "main", "pInstance", "pInstance->classItem",
+        }};
+    QTest::newRow("look-ahead function primary type argument")
+        << "struct LookAhead {double doubleItem;}; void function(double double);"
+           "int main() {LookAhead* pInstance; LookAhead instance; function(\n }"
+        << CompletionItems{{1, 0}, {
+            "LookAhead", "function", "instance",
+            "instance.doubleItem", "main",
+            "pInstance", "pInstance->doubleItem",
+        }};
+    QTest::newRow("look-ahead typedef")
+        << "typedef double DOUBLE; struct LookAhead {DOUBLE doubleItem;};"
+           "int main() {LookAhead* pInstance; LookAhead instance; double i =\n "
+        << CompletionItems{{1, 0}, {
+            "DOUBLE", "LookAhead", "i",
+            "instance", "instance.doubleItem",
+            "main", "pInstance", "pInstance->doubleItem",
+        }};
+    QTest::newRow("look-ahead pointer")
+        << "struct LookAhead {int* pInt;};"
+           "int main() {LookAhead* pInstance; LookAhead instance; int* i =\n "
+        << CompletionItems{{1, 0}, {
+            "LookAhead", "i", "instance",
+            "instance.pInt", "main",
+            "pInstance", "pInstance->pInt",
+        }};
+    QTest::newRow("look-ahead template")
+        << "template <typename T> struct LookAhead {int intItem;};"
+           "int main() {LookAhead<int>* pInstance; LookAhead<int> instance; int i =\n "
+        << CompletionItems{{1, 0}, {
+            "LookAhead", "i", "instance",
+            "instance.intItem", "main",
+            "pInstance", "pInstance->intItem",
+        }};
+    QTest::newRow("look-ahead template parameter substitution")
+        << "template <typename T> struct LookAhead {T itemT;};"
+           "int main() {LookAhead<int>* pInstance; LookAhead<int> instance; int i =\n "
+        << CompletionItems{{1, 0}, {
+            "LookAhead", "i", "instance",
+            "instance.itemT", "main",
+            "pInstance", "pInstance->itemT",
+        }};
+        QTest::newRow("look-ahead item access")
+        << "class Class { public: int publicInt; protected: int protectedInt; private: int privateInt;};"
+           "int main() {Class cl; int i =\n "
+        << CompletionItems{{1, 0}, {
+            "Class", "cl",
+            "cl.publicInt",
+            "i", "main",
+        }};
+
+        QTest::newRow("look-ahead auto item")
+        << "struct LookAhead { int intItem; };"
+           "int main() {auto instance = LookAhead(); int i = \n "
+        << CompletionItems{{1, 0}, {
+            "LookAhead",
+            "i",
+            "instance",
+            "instance.intItem"
         }};
 }
 
@@ -442,6 +598,10 @@ void TestCodeCompletion::testImplement_data()
     QTest::newRow("const")
         << "class Foo { int bar() const; };"
         << CompletionItems{{3, 1}, {"Foo::bar() const"}};
+
+    QTest::newRow("multiple-methods")
+        << "class Foo { int bar(); void foo(); char asdf() const; };"
+        << CompletionItems{{3, 1}, {"Foo::asdf() const", "Foo::bar()", "Foo::foo()"}};
 }
 
 void TestCodeCompletion::testInvalidCompletions()
@@ -591,4 +751,89 @@ void TestCodeCompletion::testOverloadedFunctions()
     QVERIFY(tester.items[0]->declaration().data() != tester.items[1]->declaration().data());
     QVERIFY(tester.items[0]->declaration().data() != tester.items[2]->declaration().data());
     QVERIFY(tester.items[1]->declaration().data() != tester.items[2]->declaration().data());
+}
+
+void TestCodeCompletion::testCompletionPriority()
+{
+    QFETCH(QString, code);
+    QFETCH(CompletionPriorityItems, expectedItems);
+
+    executeCompletionPriorityTest(code, expectedItems);
+}
+
+void TestCodeCompletion::testCompletionPriority_data()
+{
+    QTest::addColumn<QString>("code");
+    QTest::addColumn<CompletionPriorityItems>("expectedItems");
+
+    QTest::newRow("pointer")
+        << "class A{}; class B{}; class C : public B{}; int main(){A* a; B* b; C* c; b =\n "
+        << CompletionPriorityItems{{1,0}, {{"a", 0, 21}, {"b", 9, 0},
+        {"c", 8, 0, QStringLiteral("Pointer to derived class is not added to the Best Matches group")}}};
+
+    QTest::newRow("class")
+        << "class A{}; class B{}; class C : public B{}; int main(){A a; B b; C c; b =\n "
+        << CompletionPriorityItems{{1,0}, {{"a", 0, 21}, {"b", 9, 0},
+        {"c", 8, 0, QStringLiteral("Derived class is not added to the Best Matches group")}}};
+
+    QTest::newRow("primary-types")
+        << "class A{}; int main(){A a; int b; bool c = \n "
+        << CompletionPriorityItems{{1,0}, {{"a", 0, 34}, {"b", 8, 0}, {"c", 9, 0}}};
+
+    QTest::newRow("reference")
+        << "class A{}; class B{}; class C : public B{};"
+           "int main(){A tmp; A& a = tmp; C tmp2; C& c = tmp2; B& b =\n ;}"
+        << CompletionPriorityItems{{1,0}, {{"a", 0, 21}, {"b", 9, 0},
+        {"c", 8, 0, QStringLiteral("Reference to derived class is not added to the Best Matches group")}}};
+
+    QTest::newRow("typedef")
+        << "struct A{}; struct B{}; typedef A AA; typedef B BB; void f(A p);"
+           "int main(){ BB b; AA a; f(\n }"
+        << CompletionPriorityItems{{1,0}, {{"a", 9, 0}, {"b", 0, 21}}};
+
+    QTest::newRow("returnType")
+        << "struct A{}; struct B{}; struct Test{A f();B g(); Test() { A a =\n }};"
+        << CompletionPriorityItems{{1,0}, {{"f", 9, 0}, {"g", 0, 21}}};
+
+    QTest::newRow("template")
+        << "template <typename T> class Class{}; template <typename T> class Class2{};"
+           "int main(){ Class<int> a; Class2<int> b =\n }"
+        << CompletionPriorityItems{{1,0}, {{"b", 9, 0}, {"a", 0, 21}}};
+
+    QTest::newRow("protected-access")
+        << "class Base { protected: int m_protected; };"
+           "class Derived: public Base {public: void g(){\n }};"
+        << CompletionPriorityItems{{1,0}, {{"m_protected", 0, 37}}};
+
+    QTest::newRow("protected-access2")
+        << "class Base { protected: int m_protected; };"
+           "class Derived: public Base {public: void f();};"
+           "void Derived::f(){\n }"
+        << CompletionPriorityItems{{1,0}, {{"m_protected", 0, 37}}};
+}
+
+void TestCodeCompletion::testVariableScope()
+{
+    TestFile file("int var; \nvoid test(int var) {int tmp =\n }", "cpp");
+    QVERIFY(file.parseAndWait(TopDUContext::AllDeclarationsContextsUsesAndAST));
+    DUChainReadLocker lock;
+    auto top = file.topContext();
+    QVERIFY(top);
+    const ParseSessionData::Ptr sessionData(dynamic_cast<ParseSessionData*>(top->ast().data()));
+    QVERIFY(sessionData);
+
+    DUContextPointer topPtr(top);
+    lock.unlock();
+
+    const auto context = new ClangCodeCompletionContext(topPtr, sessionData, file.url().toUrl(), {2, 0}, QString());
+    context->setFilters(ClangCodeCompletionContext::ContextFilters(
+                            ClangCodeCompletionContext::NoBuiltins |
+                            ClangCodeCompletionContext::NoMacros));
+    lock.lock();
+    const auto tester = ClangCodeCompletionItemTester(QExplicitlySharedDataPointer<ClangCodeCompletionContext>(context));
+
+    QCOMPARE(tester.items.size(), 4);
+    auto item = tester.findItem(QStringLiteral("var"));
+    VERIFY(item);
+    QCOMPARE(item->declaration()->range().start, CursorInRevision(1, 14));
 }

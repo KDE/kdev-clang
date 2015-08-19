@@ -17,6 +17,7 @@ add_library(kdevclangduchain STATIC
     macronavigationcontext.cpp
     navigationwidget.cpp
     todoextractor.cpp
+    types/classspecializationtype.cpp
     unsavedfile.cpp
     documentfinderhelpers.cpp
 )
@@ -32,6 +33,7 @@ LINK_PRIVATE
     kdevclangcodegen
     kdevclangcodecompletion
     kdevclangutil
+    settingsmanager
 LINK_PUBLIC
     KDev::Language
     KDev::Project

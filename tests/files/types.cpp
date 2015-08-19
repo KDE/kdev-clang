@@ -33,6 +33,14 @@ struct Class
     char data[10 * sizeof(T)];
 };
 
+template<typename T>
+struct Class_volatile_const
+{};
+
+template <typename T, int i = 100>
+class TemplateTest
+{};
+
 /// "toString" : "int main (int, char**)"
 int main(int argc, char** argv)
 {
@@ -94,4 +102,10 @@ int main(int argc, char** argv)
     // TODO: get the actual type here somehow?
     /// "toString" : "auto autoVar"
     auto autoVar = 123;
+    /// "toString" : "const volatile auto autoVar2"
+    const volatile auto autoVar2 = 321;
+    /// "type" : { "toString" : "Class_volatile_const< int >" }
+    Class_volatile_const<int> instance;
+    /// "type" : { "toString" : "TemplateTest< TemplateTest< int, 100 >, 30 >" }
+    TemplateTest<TemplateTest<int, 100>, 30> tst;
 }

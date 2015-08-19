@@ -139,11 +139,11 @@ void TestProblems::testChildDiagnostics()
     IProblem::Ptr p1 = problems[0]->diagnostics()[0];
     const ProblemPointer d1 = ProblemPointer(dynamic_cast<Problem*>(p1.data()));
     QCOMPARE(d1->url().str(), FileName);
-    QCOMPARE(d1->rangeInCurrentRevision().start(), KTextEditor::Cursor(0, 5));
+    QCOMPARE(d1->rangeInCurrentRevision(), KTextEditor::Range(0, 5, 0, 8));
     IProblem::Ptr p2 = problems[0]->diagnostics()[1];
     const ProblemPointer d2 = ProblemPointer(dynamic_cast<Problem*>(p2.data()));
     QCOMPARE(d2->url().str(), FileName);
-    QCOMPARE(d2->rangeInCurrentRevision().start(), KTextEditor::Cursor(1, 5));
+    QCOMPARE(d2->rangeInCurrentRevision(), KTextEditor::Range(1, 5, 1, 8));
 }
 
 Q_DECLARE_METATYPE(QVector<ClangFixit>);
@@ -157,7 +157,7 @@ void TestProblems::testFixits()
     QFETCH(int, problemsCount);
     QFETCH(QVector<ClangFixit>, fixits);
 
-    auto problems = parse(code.toAscii());
+    auto problems = parse(code.toLatin1());
 
     qDebug() << problems.last()->description();
     QCOMPARE(problems.size(), problemsCount);
@@ -320,27 +320,71 @@ void TestProblems::testTodoProblems_data()
         << ExpectedTodos{{"TODO: 例えば", {0, 3}, {0, 12}}};
 }
 
+void TestProblems::testProblemsForIncludedFiles()
+{
+    TestFile header("#pragma once\n//TODO: header\n", "h");
+    TestFile file("#include \"" + header.url().byteArray() + "\"\n//TODO: source\n", "cpp");
+
+    file.parse(TopDUContext::Features(TopDUContext::AllDeclarationsContextsAndUses|TopDUContext::AST | TopDUContext::ForceUpdate));
+    QVERIFY(file.waitForParsed(5000));
+
+    {
+        DUChainReadLocker lock;
+        QVERIFY(file.topContext());
+
+        auto context = DUChain::self()->chainForDocument(file.url());
+        QVERIFY(context);
+        QCOMPARE(context->problems().size(), 1);
+        QCOMPARE(context->problems()[0]->description(), QStringLiteral("TODO: source"));
+        QCOMPARE(context->problems()[0]->finalLocation().document, file.url());
+
+        context = DUChain::self()->chainForDocument(header.url());
+        QVERIFY(context);
+        QCOMPARE(context->problems().size(), 1);
+        QCOMPARE(context->problems()[0]->description(), QStringLiteral("TODO: header"));
+        QCOMPARE(context->problems()[0]->finalLocation().document, header.url());
+    }
+}
+
+using RangeList = QVector<KTextEditor::Range>;
+
+void TestProblems::testRanges_data()
+{
+    QTest::addColumn<QByteArray>("code");
+    QTest::addColumn<RangeList>("ranges");
+
+    {
+        // expected:
+        // test.cpp:4:1: error: C++ requires a type specifier for all declarations
+        // operator[](int){return string;}
+        // ^
+        //
+        // test.cpp:4:24: error: 'string' does not refer to a value
+        // operator[](int){return string;}
+        //                        ^
+        const QByteArray code = "struct string{};\nclass Test{\npublic:\noperator[](int){return string;}\n};";
+        QTest::newRow("operator") << code << RangeList{{3, 0, 3, 8}, {3, 23, 3, 29}};
+    }
+    {
+        const QByteArray code = "#include \"/some/file/that/does/not/exist.h\"\nint main() { return 0; }";
+        QTest::newRow("badInclude") << code << RangeList{{0, 9, 0, 43}};
+    }
+    {
+        const QByteArray code = "int main() const\n{ return 0; }";
+        QTest::newRow("badConst") << code << RangeList{{0, 11, 0, 16}};
+    }
+}
+
 void TestProblems::testRanges()
 {
-    // expected:
-    // test.cpp:4:1: error: C++ requires a type specifier for all declarations
-    // operator[](int){return string;}
-    // ^
-    //
-    // test.cpp:4:24: error: 'string' does not refer to a value
-    // operator[](int){return string;}
-    //                        ^
-    const QByteArray code = "struct string{};\nclass Test{\npublic:\noperator[](int){return string;}\n};";
+    QFETCH(QByteArray, code);
+    QFETCH(RangeList, ranges);
 
-    auto problems = parse(code);
-    QCOMPARE(problems.size(), 2);
-    QVERIFY(problems[0]->diagnostics().isEmpty());
-    auto range = problems[0]->rangeInCurrentRevision();
-    QCOMPARE(range.start(), KTextEditor::Cursor(3, 0));
-    // Different versions of Clang provide different ranges...
-    // QCOMPARE(range.end(), KTextEditor::Cursor(3, 0));
-
-    range = problems[1]->rangeInCurrentRevision();
-    QCOMPARE(range.start(), KTextEditor::Cursor(3, 23));
-    QCOMPARE(range.end(), KTextEditor::Cursor(3, 23));
+    const auto problems = parse(code);
+    RangeList actualRanges;
+    foreach (auto problem, parse(code)) {
+        actualRanges << problem->rangeInCurrentRevision();
+    }
+    qDebug() << actualRanges << ranges;
+    QCOMPARE(actualRanges, ranges);
 }

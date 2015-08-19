@@ -63,11 +63,13 @@
 #include <language/duchain/use.h>
 #include <language/editor/documentcursor.h>
 
+#include "clangsettings/sessionsettings/sessionsettings.h"
+
 #include <KActionCollection>
 #include <KPluginFactory>
 
 #include <QAction>
-#include <QRegExp>
+#include <QRegularExpression>
 
 K_PLUGIN_FACTORY_WITH_JSON(KDevClangSupportFactory, "kdevclangsupport.json", registerPlugin<ClangSupport>(); )
 
@@ -86,21 +88,22 @@ namespace {
  */
 KTextEditor::Range rangeForIncludePathSpec(const QString& line, const KTextEditor::Range& originalRange = KTextEditor::Range())
 {
-    if (!line.contains(QRegExp("^\\s*#include"))) {
+    static const QRegularExpression pattern(QStringLiteral("^\\s*#include"));
+    if (!line.contains(pattern)) {
         return KTextEditor::Range::invalid();
     }
 
     KTextEditor::Range range = originalRange;
     int pos = 0;
     for (; pos < line.size(); ++pos) {
-        if(line[pos] == '"' || line[pos] == '<') {
+        if(line[pos] == QLatin1Char('"') || line[pos] == QLatin1Char('<')) {
             range.setStart({range.start().line(), ++pos});
             break;
         }
     }
 
     for (; pos < line.size(); ++pos) {
-        if(line[pos] == '"' || line[pos] == '>') {
+        if(line[pos] == QLatin1Char('"') || line[pos] == QLatin1Char('>')) {
             range.setEnd({range.start().line(), pos});
             break;
         }
@@ -173,7 +176,7 @@ QPair<TopDUContextPointer, KTextEditor::Range> importedContextForPosition(const 
     auto includeName = line.mid(wordRange.start().column(), wordRange.end().column() - wordRange.start().column());
 
     if (!includeName.isEmpty()) {
-        if (includeName.startsWith('.')) {
+        if (includeName.startsWith(QLatin1Char('.'))) {
             const Path dir = Path(url).parent();
             includeName = Path(dir, includeName).toLocalFile();
         }
@@ -182,7 +185,7 @@ QPair<TopDUContextPointer, KTextEditor::Range> importedContextForPosition(const 
         auto iterator = recursiveImports.iterator();
         while (iterator) {
             const auto str = (*iterator).url().str();
-            if (str == includeName || (str.endsWith(includeName) && str[str.size()-includeName.size()-1]=='/')) {
+            if (str == includeName || (str.endsWith(includeName) && str[str.size()-includeName.size()-1] == QLatin1Char('/'))) {
                 return {TopDUContextPointer((*iterator).data()), wordRange};
             }
             ++iterator;
@@ -204,13 +207,13 @@ QPair<TopDUContextPointer, Use> macroExpansionForPosition(const QUrl &url, const
             }
         }
     }
-    return {{}, {}};
+    return {{}, Use()};
 }
 
 }
 
 ClangSupport::ClangSupport(QObject* parent, const QVariantList& )
-    : IPlugin( "kdevclangsupport", parent )
+    : IPlugin( QStringLiteral("kdevclangsupport"), parent )
     , ILanguageSupport()
     , m_highlighting(nullptr)
     , m_refactoring(nullptr)
@@ -218,7 +221,7 @@ ClangSupport::ClangSupport(QObject* parent, const QVariantList& )
     , m_refactoringsGlue(nullptr)
 {
     KDEV_USE_EXTENSION_INTERFACE( KDevelop::ILanguageSupport )
-    setXMLFile( "kdevclangsupport.rc" );
+    setXMLFile( QStringLiteral("kdevclangsupport.rc") );
 
     ClangIntegration::DUChainUtils::registerDUChainItems();
 
@@ -227,7 +230,7 @@ ClangSupport::ClangSupport(QObject* parent, const QVariantList& )
     m_index.reset(new ClangIndex);
     m_refactoringsGlue = new KDevRefactorings(this);
 
-    new KDevelop::CodeCompletion( this, new ClangCodeCompletionModel(this), name() );
+    new KDevelop::CodeCompletion( this, new ClangCodeCompletionModel(m_index.data(), this), name() );
     for(const auto& type : DocumentFinderHelpers::mimeTypesList()){
         KDevelop::IBuddyDocumentFinder::addFinder(type, this);
     }
@@ -248,6 +251,16 @@ ClangSupport::~ClangSupport()
     }
 
     ClangIntegration::DUChainUtils::unregisterDUChainItems();
+}
+
+KDevelop::ConfigPage* ClangSupport::configPage(int number, QWidget* parent)
+{
+    return number == 0 ? new SessionSettings(parent) : nullptr;
+}
+
+int ClangSupport::configPages() const
+{
+    return 1;
 }
 
 ParseJob* ClangSupport::createParseJob(const IndexedString& url)
@@ -294,9 +307,9 @@ void ClangSupport::createActionsForMainWindow (Sublime::MainWindow* /*window*/, 
 {
     _xmlFile = xmlFile();
 
-    QAction* renameDeclarationAction = actions.addAction("code_rename_declaration");
+    QAction* renameDeclarationAction = actions.addAction(QStringLiteral("code_rename_declaration"));
     renameDeclarationAction->setText( i18n("Rename Declaration") );
-    renameDeclarationAction->setIcon(QIcon::fromTheme("edit-rename"));
+    renameDeclarationAction->setIcon(QIcon::fromTheme(QStringLiteral("edit-rename")));
     renameDeclarationAction->setShortcut( Qt::CTRL | Qt::ALT | Qt::Key_R);
     connect(renameDeclarationAction, &QAction::triggered,
             m_refactoring, &SimpleRefactoring::executeRenameAction);

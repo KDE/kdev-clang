@@ -25,8 +25,15 @@
 #include <language/duchain/ducontext.h>
 #include <language/duchain/topducontext.h>
 #include <language/duchain/declaration.h>
+#include <language/duchain/classmemberdeclaration.h>
+#include <language/duchain/classdeclaration.h>
 #include <language/duchain/duchainutils.h>
+#include <language/duchain/persistentsymboltable.h>
+#include <language/duchain/types/integraltype.h>
 #include <language/duchain/types/functiontype.h>
+#include <language/duchain/types/pointertype.h>
+#include <language/duchain/types/typealiastype.h>
+#include <language/duchain/types/typeutils.h>
 #include <language/interfaces/iastcontainer.h>
 #include <language/codecompletion/codecompletionitem.h>
 #include <language/codecompletion/codecompletionmodel.h>
@@ -36,6 +43,7 @@
 #include "../util/clangtypes.h"
 #include "../duchain/parsesession.h"
 #include "../duchain/navigationwidget.h"
+#include "../clangsettings/clangsettingsmanager.h"
 
 #include <memory>
 
@@ -45,12 +53,46 @@
 using namespace KDevelop;
 
 namespace {
-/// Completion results with priority below this value will be shown in "Best Matches" group
-/// See http://clang.llvm.org/doxygen/CodeCompleteConsumer_8h_source.html
-/// We currently treat CCP_SuperCompletion = 20 as the highest priority that still gives a "Best Match"
-const unsigned int MAX_PRIORITY_FOR_BEST_MATCHES = 20;
 /// Maximum return-type string length in completion items
 const int MAX_RETURN_TYPE_STRING_LENGTH = 20;
+
+/// Priority of code-completion results. NOTE: Keep in sync with Clang code base.
+enum CodeCompletionPriority {
+  /// Priority for the next initialization in a constructor initializer list.
+  CCP_NextInitializer = 7,
+  /// Priority for an enumeration constant inside a switch whose condition is of the enumeration type.
+  CCP_EnumInCase = 7,
+
+  CCP_LocalDeclarationMatch = 8,
+
+  CCP_DeclarationMatch = 12,
+
+  CCP_LocalDeclarationSimiliar = 17,
+  /// Priority for a send-to-super completion.
+  CCP_SuperCompletion = 20,
+
+  CCP_DeclarationSimiliar = 25,
+  /// Priority for a declaration that is in the local scope.
+  CCP_LocalDeclaration = 34,
+  /// Priority for a member declaration found from the current method or member function.
+  CCP_MemberDeclaration = 35,
+  /// Priority for a language keyword (that isn't any of the other categories).
+  CCP_Keyword = 40,
+  /// Priority for a code pattern.
+  CCP_CodePattern = 40,
+  /// Priority for a non-type declaration.
+  CCP_Declaration = 50,
+  /// Priority for a type.
+  CCP_Type = CCP_Declaration,
+  /// Priority for a constant value (e.g., enumerator).
+  CCP_Constant = 65,
+  /// Priority for a preprocessor macro.
+  CCP_Macro = 70,
+  /// Priority for a nested-name-specifier.
+  CCP_NestedNameSpecifier = 75,
+  /// Priority for a result that isn't likely to be what the user wants, but is included for completeness.
+  CCP_Unlikely = 80
+};
 
 /**
  * Common base class for Clang code completion items.
@@ -101,7 +143,7 @@ public:
     {
         if (role == Qt::DecorationRole) {
             if (index.column() == KTextEditor::CodeCompletionModel::Icon) {
-                static const QIcon icon = QIcon::fromTheme("CTparents");
+                static const QIcon icon = QIcon::fromTheme(QStringLiteral("CTparents"));
                 return icon;
             }
         }
@@ -110,7 +152,7 @@ public:
 
     void execute(KTextEditor::View* view, const KTextEditor::Range& word) override
     {
-        view->document()->replaceText(word, "virtual " + m_returnType + ' ' + m_display);
+        view->document()->replaceText(word, QLatin1String("virtual ") + m_returnType + QLatin1Char(' ') + m_display);
     }
 
 private:
@@ -123,8 +165,8 @@ public:
     ImplementsItem(const FuncImplementInfo& item)
         : CompletionItem<KDevelop::CompletionTreeItem>(
               item.prototype,
-              i18n("Implement %1", item.isConstructor ? "<constructor>" :
-                                   item.isDestructor ? "<destructor>" : item.returnType)
+              i18n("Implement %1", item.isConstructor ? QStringLiteral("<constructor>") :
+                                   item.isDestructor ? QStringLiteral("<destructor>") : item.returnType)
           )
         , m_item(item)
     {
@@ -134,7 +176,7 @@ public:
     {
         if (role == Qt::DecorationRole) {
             if (index.column() == KTextEditor::CodeCompletionModel::Icon) {
-                static const QIcon icon = QIcon::fromTheme("CTsuppliers");
+                static const QIcon icon = QIcon::fromTheme(QStringLiteral("CTsuppliers"));
                 return icon;
             }
         }
@@ -145,9 +187,9 @@ public:
     {
         QString replacement = m_item.templatePrefix;
         if (!m_item.isDestructor && !m_item.isConstructor) {
-            replacement += m_item.returnType + ' ';
+            replacement += m_item.returnType + QLatin1Char(' ');
         }
-        replacement += m_item.prototype + "\n{\n}\n";
+        replacement += m_item.prototype + QLatin1String("\n{\n}\n");
         view->document()->replaceText(word, replacement);
     }
 
@@ -191,7 +233,7 @@ public:
         }
 
         if(m_declaration->isFunctionDeclaration()) {
-            repl += "()";
+            repl += QLatin1String("()");
             view->document()->replaceText(word, repl);
             auto f = m_declaration->type<FunctionType>();
             if (f && f->indexedArgumentsSize()) {
@@ -221,6 +263,11 @@ public:
     void setMatchQuality(int value)
     {
         m_matchQuality = value;
+    }
+
+    void setInheritanceDepth(int depth)
+    {
+        m_inheritanceDepth = depth;
     }
 
 private:
@@ -296,7 +343,7 @@ bool isInsideComment(CXTranslationUnit unit, CXFile file, const KTextEditor::Cur
 QString& elideStringRight(QString& str, int length)
 {
     if (str.size() > length + 3) {
-        return str.replace(length, str.size() - length, "...");
+        return str.replace(length, str.size() - length, QLatin1String("..."));
     }
     return str;
 }
@@ -310,6 +357,43 @@ QString& elideStringRight(QString& str, int length)
 int codeCompletionPriorityToMatchQuality(unsigned int completionPriority)
 {
     return 10u - qBound(0u, completionPriority, 80u) / 8;
+}
+
+int adjustPriorityForType(const AbstractType::Ptr& type, int completionPriority)
+{
+    const auto modifier = 4;
+    if (type) {
+        const auto whichType = type->whichType();
+        if (whichType == AbstractType::TypePointer || whichType == AbstractType::TypeReference) {
+            // Clang considers all pointers as similar, this is not what we want.
+            completionPriority += modifier;
+        } else if (whichType == AbstractType::TypeStructure) {
+            // Clang considers all classes as similar too...
+            completionPriority += modifier;
+        } else if (whichType == AbstractType::TypeDelayed) {
+            completionPriority += modifier;
+        } else if (whichType == AbstractType::TypeAlias) {
+            auto aliasedType = type.cast<TypeAliasType>();
+            return adjustPriorityForType(aliasedType ? aliasedType->type() : AbstractType::Ptr(), completionPriority);
+        } else if (whichType == AbstractType::TypeFunction) {
+            auto functionType = type.cast<FunctionType>();
+            return adjustPriorityForType(functionType ? functionType->returnType() : AbstractType::Ptr(), completionPriority);
+        }
+    } else {
+        completionPriority += modifier;
+    }
+
+    return completionPriority;
+}
+
+/// Adjusts priority for the @p decl
+int adjustPriorityForDeclaration(Declaration* decl, unsigned int completionPriority)
+{
+    if(completionPriority < CCP_LocalDeclarationSimiliar || completionPriority > CCP_SuperCompletion){
+        return completionPriority;
+    }
+
+    return adjustPriorityForType(decl->abstractType(), completionPriority);
 }
 
 /**
@@ -331,7 +415,7 @@ bool isValidCompletionIdentifier(const QualifiedIdentifier& identifier)
         return false; // is constructor
     }
     const QString idString = id.toString();
-    if (idString.startsWith("~") && scope.toString() == idString.midRef(1)) {
+    if (idString.startsWith(QLatin1Char('~')) && scope.toString() == idString.midRef(1)) {
         return false; // is destructor
     }
     return true;
@@ -353,70 +437,25 @@ bool isValidSpecialCompletionIdentifier(const QualifiedIdentifier& identifier)
 
     const Identifier id = identifier.last();
     const QString idString = id.toString();
-    if (idString.startsWith("operator=")) {
+    if (idString.startsWith(QLatin1String("operator="))) {
         return true; // is assignment operator
     }
     return false;
 }
 
-void addEnumItems(Declaration* declaration, QHash<QualifiedIdentifier, Declaration*>& declarationsCache);
-
-/// Add declarations from namespace into @p declarationsCache
-void addNamespaceItems(Declaration* declaration, QHash<QualifiedIdentifier, Declaration*>& declarationsCache)
+Declaration* findDeclaration(const QualifiedIdentifier& qid, const DUContextPointer& ctx, const CursorInRevision& position, QSet<Declaration*>& handled)
 {
-    if (declaration->kind() != Declaration::Namespace || !declaration->internalContext()) {
-        return;
-    }
+    PersistentSymbolTable::Declarations decl = PersistentSymbolTable::self().getDeclarations(qid);
 
-    const auto namespaceDeclarations = declaration->internalContext()->localDeclarations();
-    for (const auto& nd : namespaceDeclarations) {
-        declarationsCache.insert(nd->qualifiedIdentifier(), nd);
-        addEnumItems(nd, declarationsCache);
-    }
-}
-
-/// Add enumerators into @p declarationsCache
-void addEnumItems(Declaration* declaration, QHash<QualifiedIdentifier, Declaration*>& declarationsCache)
-{
-    if (declaration->kind() != Declaration::Type || !declaration->internalContext()) {
-        return;
-    }
-
-    const auto ictx = declaration->internalContext();
-    if (ictx->type() == DUContext::Enum) {
-        for (const auto enumerator : ictx->localDeclarations()) {
-            declarationsCache.insert(enumerator->qualifiedIdentifier(), enumerator);
+    for (auto it = decl.iterator(); it; ++it) {
+        auto declaration = it->declaration();
+        if (declaration->kind() == Declaration::Instance) {
+            break;
         }
-    }
-}
-
-QMultiHash<QualifiedIdentifier, Declaration*> generateCache(const DUContextPointer& ctx, const CursorInRevision& position)
-{
-    const auto allDeclarationsList = ctx->allDeclarations(position, ctx->topContext());
-    QMultiHash<QualifiedIdentifier, Declaration*> declarationsHash;
-
-    for (const auto& declaration : allDeclarationsList) {
-        // We store function-local declarations with qid like: "function::declaration", but completion items provided by Clang have qid like: "declaration", so we use id here instead.
-        declarationsHash.insert(declaration.second ? declaration.first->qualifiedIdentifier() : QualifiedIdentifier(declaration.first->identifier()), declaration.first);
-
-        // Intentionally not recurse into nested namespaces and inner class contexts as the findDeclarations call is much cheaper.
-        addNamespaceItems(declaration.first, declarationsHash);
-        addEnumItems(declaration.first, declarationsHash);
-    }
-
-    return declarationsHash;
-}
-
-Declaration* findDeclaration(const QualifiedIdentifier& qid, const DUContextPointer& ctx, const CursorInRevision& position, const QMultiHash<QualifiedIdentifier, Declaration*>& declarationsCache, QSet<Declaration*>& handled)
-{
-    auto i = declarationsCache.find(qid);
-    while (i != declarationsCache.end() && i.key() == qid) {
-        auto declaration = i.value();
         if (!handled.contains(declaration)) {
             handled.insert(declaration);
             return declaration;
         }
-        ++i;
     }
 
     const auto foundDeclarations = ctx->findDeclarations(qid, position);
@@ -429,6 +468,150 @@ Declaration* findDeclaration(const QualifiedIdentifier& qid, const DUContextPoin
 
     return nullptr;
 }
+
+/// If any parent of this context is a class, the closest class declaration is returned, nullptr otherwise
+Declaration* classDeclarationForContext(const DUContextPointer& context, const CursorInRevision& position)
+{
+    auto parent = context;
+    while (parent) {
+        if (parent->type() == DUContext::Class) {
+            break;
+        }
+
+        if (auto owner = parent->owner()) {
+            // Work-around for out-of-line methods. They have Helper context instead of Class context
+            if (owner->context() && owner->context()->type() == DUContext::Helper) {
+                auto qid = owner->qualifiedIdentifier();
+                qid.pop();
+
+                QSet<Declaration*> tmp;
+                auto decl = findDeclaration(qid, context, position, tmp);
+
+                if (decl && decl->internalContext() && decl->internalContext()->type() == DUContext::Class) {
+                    parent = decl->internalContext();
+                    break;
+                }
+            }
+        }
+        parent = parent->parentContext();
+    }
+
+    return parent ? parent->owner() : nullptr;
+}
+
+class LookAheadItemMatcher
+{
+public:
+    LookAheadItemMatcher(const TopDUContextPointer& ctx)
+        : m_topContext(ctx)
+        , m_enabled(ClangSettingsManager::self()->codeCompletionSettings().lookAhead)
+    {}
+
+    /// Adds all local declarations for @p declaration into possible look-ahead items.
+    void addDeclarations(Declaration* declaration)
+    {
+        if (!m_enabled) {
+            return;
+        }
+
+        if (declaration->kind() != Declaration::Instance) {
+            return;
+        }
+
+        auto type = typeForDeclaration(declaration);
+        auto identifiedType = dynamic_cast<const IdentifiedType*>(type.data());
+        if (!identifiedType) {
+            return;
+        }
+
+        addDeclarationsForType(identifiedType, declaration);
+    }
+
+    /// Add type for matching. This type'll be used for filtering look-ahead items
+    /// Only items with @p type will be returned through @sa matchedItems
+    void addMatchedType(const IndexedType& type)
+    {
+        matchedTypes.insert(type);
+    }
+
+    /// @return look-ahead items that math given types. @sa addMatchedType
+    QList<CompletionTreeItemPointer> matchedItems()
+    {
+        QList<CompletionTreeItemPointer> lookAheadItems;
+        for (const auto& pair: possibleLookAheadDeclarations) {
+            auto decl = pair.first;
+            if (matchedTypes.contains(decl->indexedType())) {
+                auto parent = pair.second;
+                const QString access = parent->abstractType()->whichType() == AbstractType::TypePointer
+                                 ? QStringLiteral("->") : QStringLiteral(".");
+                const QString text = parent->identifier().toString() + access + decl->identifier().toString();
+                auto item = new DeclarationItem(decl, text, {}, text);
+                item->setMatchQuality(8);
+                lookAheadItems.append(CompletionTreeItemPointer(item));
+            }
+        }
+
+        return lookAheadItems;
+    }
+
+private:
+    AbstractType::Ptr typeForDeclaration(const Declaration* decl)
+    {
+        return TypeUtils::targetType(decl->abstractType(), m_topContext.data());
+    }
+
+    void addDeclarationsForType(const IdentifiedType* identifiedType, Declaration* declaration)
+    {
+        if (auto typeDecl = identifiedType->declaration(m_topContext.data())) {
+            if (dynamic_cast<ClassDeclaration*>(typeDecl->logicalDeclaration(m_topContext.data()))) {
+                if (!typeDecl->internalContext()) {
+                    return;
+                }
+
+                for (auto localDecl : typeDecl->internalContext()->localDeclarations()) {
+                    if(localDecl->identifier().isEmpty()){
+                        continue;
+                    }
+
+                    if(auto classMember = dynamic_cast<ClassMemberDeclaration*>(localDecl)){
+                        // TODO: Also add protected/private members if completion is inside this class context.
+                        if(classMember->accessPolicy() != Declaration::Public){
+                            continue;
+                        }
+                    }
+
+                    if(!declaration->abstractType()){
+                        continue;
+                    }
+
+                    if (declaration->abstractType()->whichType() == AbstractType::TypeIntegral) {
+                        if (auto integralType = declaration->abstractType().cast<IntegralType>()) {
+                            if (integralType->dataType() == IntegralType::TypeVoid) {
+                                continue;
+                            }
+                        }
+                    }
+
+                    possibleLookAheadDeclarations.insert({localDecl, declaration});
+                }
+            }
+        }
+    }
+
+    // Declaration and it's context
+    typedef QPair<Declaration*, Declaration*> DeclarationContext;
+
+    /// Types of declarations that look-ahead completion items can have
+    QSet<IndexedType> matchedTypes;
+
+    // List of declarations that can be added to the Look Ahead group
+    // Second declaration represents context
+    QSet<DeclarationContext> possibleLookAheadDeclarations;
+
+    TopDUContextPointer m_topContext;
+
+    bool m_enabled;
+};
 
 }
 
@@ -460,6 +643,12 @@ ClangCodeCompletionContext::ClangCodeCompletionContext(const DUContextPointer& c
 
         if (!m_results) {
             qCWarning(KDEV_CLANG) << "Something went wrong during 'clang_codeCompleteAt' for file" << file;
+            return;
+        }
+
+        auto addMacros = ClangSettingsManager::self()->codeCompletionSettings().macros;
+        if (!addMacros) {
+            m_filters |= NoMacros;
         }
     }
 
@@ -493,7 +682,6 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
     }
 
     const auto ctx = DUContextPointer(m_duContext->findContextAt(m_position));
-    const auto declarationsCache = generateCache(ctx, m_position);
 
     /// Normal completion items, such as 'void Foo::foo()'
     QList<CompletionTreeItemPointer> items;
@@ -506,6 +694,8 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
 
     QSet<Declaration*> handled;
 
+    LookAheadItemMatcher lookAheadMatcher(TopDUContextPointer(ctx->topContext()));
+
     clangDebug() << "Clang found" << m_results->NumResults << "completion results";
 
     for (uint i = 0; i < m_results->NumResults; ++i) {
@@ -516,7 +706,7 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
         auto result = m_results->Results[i];
 
         const auto availability = clang_getCompletionAvailability(result.CompletionString);
-        if (availability == CXAvailability_NotAvailable || availability == CXAvailability_NotAccessible) {
+        if (availability == CXAvailability_NotAvailable) {
             continue;
         }
 
@@ -532,6 +722,12 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
 
         const bool isDeclaration = !isMacroDefinition && !isBuiltin;
         if (isDeclaration && m_filters & NoDeclarations) {
+            continue;
+        }
+
+        // If ctx is/inside the Class context, this represents that context.
+        auto currentClassContext = classDeclarationForContext(ctx, m_position);
+        if (availability == CXAvailability_NotAccessible && (!isDeclaration || !currentClassContext)) {
             continue;
         }
 
@@ -596,7 +792,7 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
                 case CXCompletionChunk_RightParen:
                     --parenDepth;
                     if (signatureState == Inside && !parenDepth) {
-                        display += ')';
+                        display += QLatin1Char(')');
                         signatureState = After;
                     }
                     break;
@@ -629,21 +825,46 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
                 continue;
             }
 
-            auto found = findDeclaration(qid, ctx, m_position, declarationsCache, handled);
+            auto found = findDeclaration(qid, ctx, m_position, handled);
 
             CompletionTreeItemPointer item;
             if (found) {
-                auto declarationItem = new DeclarationItem(found, display, resultType, replacement);
+                // TODO: Bug in Clang: protected members from base classes not accessible in derived classes.
+                if (availability == CXAvailability_NotAccessible) {
+                    if (auto cl = dynamic_cast<ClassMemberDeclaration*>(found)) {
+                        if (cl->accessPolicy() != Declaration::Protected) {
+                            continue;
+                        }
 
-                const unsigned int completionPriority = clang_getCompletionPriority(result.CompletionString);
-                const bool bestMatch = completionPriority <= MAX_PRIORITY_FOR_BEST_MATCHES;
+                        auto declarationClassContext = classDeclarationForContext(DUContextPointer(found->context()), m_position);
 
-                //don't set best match property for internal identifiers, also prefer declarations from current file
-                if (bestMatch && !found->indexedIdentifier().identifier().toString().startsWith("__") ) {
-                    const int matchQuality = codeCompletionPriorityToMatchQuality(completionPriority);
-                    declarationItem->setMatchQuality(matchQuality);
+                        uint steps = 10;
+                        auto inheriters = DUChainUtils::getInheriters(declarationClassContext, steps);
+                        if(!inheriters.contains(currentClassContext)){
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
                 }
 
+                auto declarationItem = new DeclarationItem(found, display, resultType, replacement);
+
+                const unsigned int completionPriority = adjustPriorityForDeclaration(found, clang_getCompletionPriority(result.CompletionString));
+                const bool bestMatch = completionPriority <= CCP_SuperCompletion;
+
+                //don't set best match property for internal identifiers, also prefer declarations from current file
+                if (bestMatch && !found->indexedIdentifier().identifier().toString().startsWith(QLatin1String("__")) ) {
+                    const int matchQuality = codeCompletionPriorityToMatchQuality(completionPriority);
+                    declarationItem->setMatchQuality(matchQuality);
+
+                    // TODO: LibClang missing API to determine expected code completion type.
+                    lookAheadMatcher.addMatchedType(found->indexedType());
+                } else {
+                    declarationItem->setInheritanceDepth(completionPriority);
+
+                    lookAheadMatcher.addDeclarations(found);
+                }
                 item = declarationItem;
             } else {
                 // still, let's trust that Clang found something useful and put it into the completion result list
@@ -665,7 +886,7 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
 
         if (result.CursorKind == CXCursor_MacroDefinition) {
             // TODO: grouping of macros and built-in stuff
-            static const QIcon icon = QIcon::fromTheme("code-macro");
+            static const QIcon icon = QIcon::fromTheme(QStringLiteral("code-macro"));
             auto item = CompletionTreeItemPointer(new SimpleItem(display, resultType, replacement, icon));
             macros.append(item);
         } else if (result.CursorKind == CXCursor_NotImplemented) {
@@ -678,11 +899,13 @@ QList<CompletionTreeItemPointer> ClangCodeCompletionContext::completionItems(boo
         return {};
     }
 
-    addOverwritableItems();
     addImplementationHelperItems();
+    addOverwritableItems();
+
     eventuallyAddGroup(i18n("Special"), 700, specialItems);
-    eventuallyAddGroup(i18n("Macros"), 900, macros);
-    eventuallyAddGroup(i18n("Builtin"), 800, builtin);
+    eventuallyAddGroup(i18n("Look-ahead Matches"), 800, lookAheadMatcher.matchedItems());
+    eventuallyAddGroup(i18n("Builtin"), 900, builtin);
+    eventuallyAddGroup(i18n("Macros"), 1000, macros);
     return items;
 }
 
@@ -708,11 +931,11 @@ void ClangCodeCompletionContext::addOverwritableItems()
     QList<CompletionTreeItemPointer> overrides;
     for (int i = 0; i < overrideList.count(); i++) {
         FuncOverrideInfo info = overrideList.at(i);
-        QString nameAndParams = info.name + '(' + info.params.join(", ") + ')';
+        QString nameAndParams = info.name + QLatin1Char('(') + info.params.join(QLatin1String(", ")) + QLatin1Char(')');
         if(info.isConst)
-            nameAndParams = nameAndParams + " const";
+            nameAndParams = nameAndParams + QLatin1String(" const");
         if(info.isVirtual)
-            nameAndParams = nameAndParams + " = 0";
+            nameAndParams = nameAndParams + QLatin1String(" = 0");
         overrides << CompletionTreeItemPointer(new OverrideItem(nameAndParams, info.returnType));
     }
     eventuallyAddGroup(i18n("Virtual Override"), 0, overrides);
@@ -726,7 +949,7 @@ void ClangCodeCompletionContext::addImplementationHelperItems()
     }
 
     QList<CompletionTreeItemPointer> implements;
-    foreach(FuncImplementInfo info, implementsList) {
+    foreach(const auto& info, implementsList) {
         implements << CompletionTreeItemPointer(new ImplementsItem(info));
     }
     eventuallyAddGroup(i18n("Implement Function"), 0, implements);

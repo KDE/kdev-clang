@@ -91,15 +91,15 @@ QDebug operator<<(QDebug debug, const ClangFixit& fixit)
     return debug;
 }
 
-ClangProblem::ClangProblem(CXDiagnostic diagnostic)
+ClangProblem::ClangProblem(CXDiagnostic diagnostic, CXTranslationUnit unit)
 {
     auto severity = diagnosticSeverityToSeverity(clang_getDiagnosticSeverity(diagnostic));
     setSeverity(severity);
 
-    QString description(ClangString(clang_getDiagnosticSpelling(diagnostic)));
-    const QString diagnosticOption(ClangString(clang_getDiagnosticOption(diagnostic, nullptr)));
+    QString description = ClangString(clang_getDiagnosticSpelling(diagnostic)).toString();
+    const QString diagnosticOption = ClangString(clang_getDiagnosticOption(diagnostic, nullptr)).toString();
     if (!diagnosticOption.isEmpty()) {
-        description.append(QString(" [%1]").arg(diagnosticOption));
+        description.append(QStringLiteral(" [%1]").arg(diagnosticOption));
     }
     setDescription(prettyDiagnosticSpelling(description));
 
@@ -107,7 +107,7 @@ ClangProblem::ClangProblem(CXDiagnostic diagnostic)
     CXFile diagnosticFile;
     clang_getFileLocation(location, &diagnosticFile, nullptr, nullptr, nullptr);
     const ClangString fileName(clang_getFileName(diagnosticFile));
-    DocumentRange docRange(IndexedString(fileName), KTextEditor::Range(location, location));
+    DocumentRange docRange(fileName.toIndexed(), KTextEditor::Range(location, location));
     const uint numRanges = clang_getDiagnosticNumRanges(diagnostic);
     for (uint i = 0; i < numRanges; ++i) {
         auto range = ClangRange(clang_getDiagnosticRange(diagnostic, i)).toRange();
@@ -122,6 +122,23 @@ ClangProblem::ClangProblem(CXDiagnostic diagnostic)
             docRange.setEnd(range.end());
         }
     }
+    if (docRange.isEmpty()) {
+        // try to find a bigger range for the given location by using the token at the given location
+        CXFile file = nullptr;
+        unsigned line = 0;
+        unsigned column = 0;
+        clang_getExpansionLocation(location, &file, &line, &column, nullptr);
+        // just skip ahead some characters, hoping that it's sufficient to encompass
+        // a token we can use for building the range
+        auto nextLocation = clang_getLocation(unit, file, line, column + 100);
+        auto rangeToTokenize = clang_getRange(location, nextLocation);
+        CXToken *tokens = nullptr;
+        unsigned numTokens = 0;
+        clang_tokenize(unit, rangeToTokenize, &tokens, &numTokens);
+        if (numTokens) {
+            docRange.setRange(ClangRange(clang_getTokenExtent(unit, tokens[0])).toRange());
+        }
+    }
 
     setFixits(fixitsForDiagnostic(diagnostic));
     setFinalLocation(docRange);
@@ -132,7 +149,7 @@ ClangProblem::ClangProblem(CXDiagnostic diagnostic)
     auto numChildDiagnostics = clang_getNumDiagnosticsInSet(childDiagnostics);
     for (uint j = 0; j < numChildDiagnostics; ++j) {
         auto childDiagnostic = clang_getDiagnosticInSet(childDiagnostics, j);
-        ClangProblem::Ptr problem(new ClangProblem(childDiagnostic));
+        ClangProblem::Ptr problem(new ClangProblem(childDiagnostic, unit));
         diagnostics << ProblemPointer(problem.data());
     }
     setDiagnostics(diagnostics);
@@ -214,7 +231,8 @@ QString ClangFixitAction::description() const
     // fallback in case there's no hint for the diagnostic
     // Make sure we don't break on a replacementText such as '#include <foobar>'
     auto formattedReplacement = m_fixit.replacementText;
-    formattedReplacement.replace("<", "&amp;lt;").replace(">", "&amp;gt;");
+    formattedReplacement.replace(QLatin1Char('<'), QLatin1String("&amp;lt;"))
+                        .replace(QLatin1Char('>'), QLatin1String("&amp;gt;"));
 
     const auto range = m_fixit.range;
     if (range.start() == range.end()) {

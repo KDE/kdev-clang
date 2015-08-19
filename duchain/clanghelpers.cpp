@@ -129,8 +129,6 @@ ReferencedTopDUContext ClangHelpers::buildDUChain(CXFile file, const Imports& im
     UrlParseLock urlLock(path);
     ReferencedTopDUContext context;
     {
-        const auto problems = session.problemsForFile(file);
-
         DUChainWriteLocker lock;
         context = DUChain::self()->chainForDocument(path, &environment);
         if (!context) {
@@ -138,8 +136,6 @@ ReferencedTopDUContext ClangHelpers::buildDUChain(CXFile file, const Imports& im
         } else {
             update = true;
         }
-
-        context->setProblems(problems);
 
         includedFiles.insert(file, context);
         if (update) {
@@ -170,6 +166,12 @@ ReferencedTopDUContext ClangHelpers::buildDUChain(CXFile file, const Imports& im
             context->addImportedParentContext(ctx, import.location);
         }
         context->updateImportsCache();
+    }
+
+    const auto problems = session.problemsForFile(file);
+    {
+        DUChainWriteLocker lock;
+        context->setProblems(problems);
     }
 
     Builder::visit(session.unit(), file, includedFiles, update);
@@ -234,14 +236,14 @@ DeclarationPointer ClangHelpers::findForwardDeclaration(CXType type, DUContext* 
 RangeInRevision ClangHelpers::cursorSpellingNameRange(CXCursor cursor, const Identifier& id)
 {
     auto range = ClangRange(clang_Cursor_getSpellingNameRange(cursor, 0, 0)).toRangeInRevision();
+#if CINDEX_VERSION_MINOR < 29
     auto kind = clang_getCursorKind(cursor);
-    // TODO: Upstream issue: Check why clang reports invalid ranges for destructors and methods like 'operator='
-    // Current issues:
-    // - CXCursor_Destructor: Only returns the range of '~'
-    // - CXCursor_CXXMethod: For operator overloads, only returns the range of 'operator'
+    // Clang used to report invalid ranges for destructors and methods like 'operator='
     if (kind == CXCursor_Destructor || kind == CXCursor_CXXMethod) {
         range.end.column = range.start.column + id.toString().length();
     }
+#endif
+    Q_UNUSED(id);
     return range;
 }
 

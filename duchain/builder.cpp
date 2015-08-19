@@ -28,6 +28,7 @@
 #include "cursorkindtraits.h"
 #include "clangducontext.h"
 #include "macrodefinition.h"
+#include "types/classspecializationtype.h"
 #include "util/clangdebug.h"
 #include "util/clangutils.h"
 #include "util/clangtypes.h"
@@ -48,9 +49,7 @@
 #include <language/duchain/types/typealiastype.h>
 #include <language/duchain/types/indexedtype.h>
 
-#if CINDEX_VERSION_MINOR >= 25
 #include <clang-c/Documentation.h>
-#endif
 
 #include <unordered_map>
 #include <typeinfo>
@@ -91,7 +90,7 @@ CXCursor referencedCursor(CXCursor cursor)
 
 Identifier makeId(CXCursor cursor)
 {
-    return Identifier(IndexedString(ClangString(clang_getCursorSpelling(cursor))));
+    return Identifier(ClangString(clang_getCursorSpelling(cursor)).toIndexed());
 }
 
 QByteArray makeComment(CXComment comment)
@@ -99,7 +98,7 @@ QByteArray makeComment(CXComment comment)
     if (Q_UNLIKELY(s_jsonTestRun)) {
         auto kind = clang_Comment_getKind(comment);
         if (kind == CXComment_Text)
-            return {ClangString(clang_TextComment_getText(comment))};
+            return ClangString(clang_TextComment_getText(comment)).toByteArray();
 
         QByteArray text;
         int numChildren = clang_Comment_getNumChildren(comment);
@@ -108,13 +107,19 @@ QByteArray makeComment(CXComment comment)
         return text;
     }
 
-    return {ClangString(clang_FullComment_getAsHTML(comment))};
+    return ClangString(clang_FullComment_getAsHTML(comment)).toByteArray();
 }
 
 AbstractType* createDelayedType(CXType type)
 {
     auto t = new DelayedType;
-    t->setIdentifier(IndexedTypeIdentifier(ClangString(clang_getTypeSpelling(type)).toString()));
+
+    // TODO: Fix clang_getTypeSpelling not to prepend type modifiers for auto types
+    QString typeName = ClangString(clang_getTypeSpelling(type)).toString();
+    typeName.remove(QStringLiteral("const "));
+    typeName.remove(QStringLiteral("volatile "));
+
+    t->setIdentifier(IndexedTypeIdentifier(typeName));
     return t;
 }
 
@@ -296,7 +301,9 @@ struct Visitor
         IF_DEBUG(clangDebug() << "TK:" << type.kind;)
 
         auto kdevType = createType<TK>(type, cursor);
-        setTypeModifiers<TK>(type, kdevType);
+        if (kdevType) {
+            setTypeModifiers<TK>(type, kdevType);
+        }
         return kdevType;
     }
 //BEGIN dispatch*
@@ -353,6 +360,10 @@ struct Visitor
         decl->setIdentifier(id);
         m_cursorToDeclarationCache[clang_hashCursor(cursor)] = decl;
         setDeclData<CK>(cursor, decl);
+        {
+            DUChainWriteLocker lock;
+            decl->setContext(m_parentContext->context);
+        }
         return decl;
     }
 
@@ -363,7 +374,6 @@ struct Visitor
         auto type = createType<CK>(cursor);
 
         DUChainWriteLocker lock;
-        decl->setContext(m_parentContext->context);
         if (context)
             decl->setInternalContext(context);
         setDeclType<CK>(decl, type);
@@ -457,7 +467,7 @@ struct Visitor
 
         if (clang_isFunctionTypeVariadic(type)) {
             auto type = new DelayedType;
-            static const auto id = IndexedTypeIdentifier("...");
+            static const auto id = IndexedTypeIdentifier(QStringLiteral("..."));
             type->setIdentifier(id);
             type->setKind(DelayedType::Unresolved);
             func->addArgument(AbstractType::Ptr(type));
@@ -504,7 +514,7 @@ struct Visitor
     AbstractType *createType(CXType, CXCursor /*parent*/)
     {
         auto t = new DelayedType;
-        static const IndexedTypeIdentifier id(CursorKindTraits::delayedTypeName(TK));
+        static const IndexedTypeIdentifier id(QLatin1String(CursorKindTraits::delayedTypeName(TK)));
         t->setIdentifier(id);
         return t;
     }
@@ -518,6 +528,12 @@ struct Visitor
     template<CXTypeKind TK, EnableIf<TK == CXType_Unexposed> = dummy>
     AbstractType *createType(CXType type, CXCursor parent)
     {
+        auto numTA = clang_Type_getNumTemplateArguments(type);
+        if (numTA != -1) {
+            // This is a class template specialization.
+            return createClassTemplateSpecializationType(type);
+        }
+
         // Maybe it's the ElaboratedType. E.g.: "struct Type foo();" or "NS::Type foo();" or "void foo(enum Enum e);" e.t.c.
         auto oldType = type;
 
@@ -566,7 +582,7 @@ struct Visitor
     AbstractType *createType(CXCursor)
     {
         auto t = new DelayedType;
-        static const IndexedTypeIdentifier id("Label");
+        static const IndexedTypeIdentifier id(QStringLiteral("Label"));
         t->setIdentifier(id);
         return t;
     }
@@ -577,6 +593,57 @@ struct Visitor
         auto clangType = clang_getCursorType(cursor);
         return makeType(clangType, cursor);
     }
+
+    AbstractType* createClassTemplateSpecializationType(CXType type)
+    {
+        auto numTA = clang_Type_getNumTemplateArguments(type);
+        Q_ASSERT(numTA != -1);
+
+        auto cst = new ClassSpecializationType;
+        auto typeDecl = clang_getTypeDeclaration(type);
+
+        QStringList typesStr;
+        QString tStr = ClangString(clang_getTypeSpelling(type)).toString();
+        ParamIterator iter(QStringLiteral("<>"), tStr);
+
+        while (iter) {
+            typesStr.append(*iter);
+            ++iter;
+        }
+
+        for (int i = 0; i < numTA; i++) {
+            auto argumentType = clang_Type_getTemplateArgumentAsType(type, i);
+            AbstractType::Ptr currentType;
+            if (argumentType.kind == CXType_Invalid) {
+                if(i >= typesStr.size()){
+                    currentType = createDelayedType(argumentType);
+                } else {
+                    auto t = new DelayedType;
+                    t->setIdentifier(IndexedTypeIdentifier(typesStr[i]));
+                    currentType = t;
+                }
+            } else {
+                if (clang_Type_getNumTemplateArguments(argumentType) != -1) {
+                    // E.g. type< type<int> >. Use a delayed type for now.
+                    currentType = createDelayedType(argumentType);
+                } else {
+                    currentType = makeType(argumentType, typeDecl);
+                }
+            }
+
+            if (currentType) {
+                cst->addParameter(currentType->indexed());
+            }
+        }
+
+        auto decl = findDeclaration(typeDecl);
+
+        DUChainReadLocker lock;
+        cst->setDeclaration(decl.data());
+
+        return cst;
+    }
+
 //END create*
 
 //BEGIN setDeclData
@@ -628,7 +695,7 @@ struct Visitor
         // TODO: Debug further
         auto type = decl->abstractType();
         if (type) {
-            if (ClangUtils::isConstMethod(cursor)) {
+            if (clang_CXXMethod_isConst(cursor)) {
                 type->setModifiers(type->modifiers() | AbstractType::ConstModifier);
                 decl->setAbstractType(type);
             }
@@ -640,10 +707,8 @@ struct Visitor
     {
         setDeclInCtxtData<CK>(cursor, static_cast<FunctionDeclaration*>(def));
 
-        CXCursor canon = clang_getCanonicalCursor(cursor);
-        if (clang_equalCursors(canon, cursor)) {
-            def->setDeclarationIsDefinition(true);
-        } else if (auto decl = findDeclaration(canon)) {
+        const CXCursor canon = clang_getCanonicalCursor(cursor);
+        if (auto decl = findDeclaration(canon)) {
             def->setDeclaration(decl.data());
         }
     }
@@ -803,9 +868,9 @@ void Visitor::setDeclData(CXCursor cursor, MacroDefinition* decl) const
     // And no way to get the actual definition text range
     // Should be quite easy to expose that in libclang, though
     // Let' still get some basic support for this and parse on our own, it's not that difficult
-    const QByteArray contents = ClangUtils::getRawContents(unit, range);
-    const int firstOpeningParen = contents.indexOf('(');
-    const int firstWhitespace = contents.indexOf(' ');
+    const QString contents = QString::fromUtf8(ClangUtils::getRawContents(unit, range));
+    const int firstOpeningParen = contents.indexOf(QLatin1Char('('));
+    const int firstWhitespace = contents.indexOf(QLatin1Char(' '));
     const bool isFunctionLike = (firstOpeningParen != -1) && (firstOpeningParen < firstWhitespace);
     decl->setFunctionLike(isFunctionLike);
 
@@ -817,8 +882,8 @@ void Visitor::setDeclData(CXCursor cursor, MacroDefinition* decl) const
             start = closingParen + 2; // + ')' + ' '
 
             // extract macro function parameters
-            const QString parameters = QString::fromUtf8(contents.mid(firstOpeningParen, closingParen - firstOpeningParen + 1));
-            ParamIterator paramIt("():", parameters, 0);
+            const QString parameters = contents.mid(firstOpeningParen, closingParen - firstOpeningParen + 1);
+            ParamIterator paramIt(QStringLiteral("():"), parameters, 0);
             while (paramIt) {
                 decl->addParameter(IndexedString(*paramIt));
                 ++paramIt;
@@ -829,9 +894,9 @@ void Visitor::setDeclData(CXCursor cursor, MacroDefinition* decl) const
     }
     if (start == -1) {
         // unlikely: invalid macro definition, insert the complete #define statement
-        decl->setDefinition(IndexedString("#define " + contents));
+        decl->setDefinition(IndexedString(QLatin1String("#define ") + contents));
     } else if (start < contents.size()) {
-        decl->setDefinition(IndexedString(contents.constData() + start));
+        decl->setDefinition(IndexedString(contents.mid(start)));
     } // else: macro has no body => leave the definition text empty
 }
 
@@ -935,7 +1000,7 @@ CXChildVisitResult Visitor::buildDeclaration(CXCursor cursor)
     // Code path for class declarations that may be defined "out-of-line", e.g.
     // "SomeNameSpace::SomeClass {};"
     QScopedPointer<CurrentContext> helperContext;
-    if (CursorKindTraits::isClass(CK)) {
+    if (CursorKindTraits::isClass(CK) || CursorKindTraits::isFunction(CK)) {
         const auto lexicalParent = clang_getCursorLexicalParent(cursor);
         const auto semanticParent = clang_getCursorSemanticParent(cursor);
         const bool isOutOfLine = !clang_equalCursors(lexicalParent, semanticParent);
@@ -1015,7 +1080,7 @@ CXChildVisitResult Visitor::buildCXXBaseSpecifier(CXCursor cursor)
     auto decl = findDeclaration(classDeclCursor);
     if (!decl) {
         // this happens for templates with template-dependent base classes e.g. - dunno whether we can/should do more here
-        clangDebug() << "failed to find declaration for base specifier:" << ClangString(clang_getCursorDisplayName(cursor));
+        clangDebug() << "failed to find declaration for base specifier:" << clang_getCursorDisplayName(cursor);
         return CXChildVisit_Recurse;
     }
 
@@ -1102,7 +1167,7 @@ AbstractType *Visitor::makeType(CXType type, CXCursor parent)
     case CXType_Invalid:
         return nullptr;
     default:
-        qCWarning(KDEV_CLANG) << "Unhandled type:" << type.kind << ClangString(clang_getTypeSpelling(type));
+        qCWarning(KDEV_CLANG) << "Unhandled type:" << type.kind << clang_getTypeSpelling(type);
         return nullptr;
     }
 }

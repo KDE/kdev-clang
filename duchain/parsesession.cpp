@@ -46,30 +46,29 @@ using namespace KDevelop;
 
 namespace {
 
-QVector<const char*> argsForSession(const QString& path, ParseSessionData::Options options, QByteArray& languageStandard)
+QVector<QByteArray> argsForSession(const QString& path, ParseSessionData::Options options, const ParserSettings& parserSettings)
 {
     QMimeDatabase db;
     if(db.mimeTypeForFile(path).name() == QStringLiteral("text/x-objcsrc")) {
-        return {"-xobjective-c++"};
+        return {QByteArrayLiteral("-xobjective-c++")};
     }
 
-    //this can happen for unit tests that use the ParseSession directly
-    if (languageStandard.isEmpty()) {
-        static const QByteArray defaultLanguageStandard("c++11");
-        languageStandard = defaultLanguageStandard;
+    // this can happen for unit tests that use the ParseSession directly
+    if (parserSettings.parserOptions.isEmpty()) {
+        return {QByteArrayLiteral("-fspell-checking"), QByteArrayLiteral("-Wdocumentation"), QByteArrayLiteral("-std=c++11"), QByteArrayLiteral("-xc++"), QByteArrayLiteral("-Wall"), QByteArrayLiteral("-nostdinc"), QByteArrayLiteral("-nostdinc++")};
     }
 
-    languageStandard = "-std=" + languageStandard;
+    auto result = parserSettings.toClangAPI();
+    result.append(QByteArrayLiteral("-nostdinc"));
+    result.append(QByteArrayLiteral("-nostdinc++"));
 
     if (options & ParseSessionData::PrecompiledHeader) {
-        return {languageStandard.data(), languageStandard.contains("++") ? "-xc++-header" : "-xc-header", "-Wall", "-nostdinc", "-nostdinc++"};
+        result.append(parserSettings.isCpp() ? QByteArrayLiteral("-xc++-header") : QByteArrayLiteral("-xc-header"));
+        return result;
     }
 
-    if(!languageStandard.contains("++")) {
-        return { languageStandard.data(), "-Wall", "-nostdinc", "-nostdinc++" };
-    }
-
-    return { languageStandard.data(), "-xc++", "-Wall", "-nostdinc", "-nostdinc++" };
+    result.append(parserSettings.isCpp() ? QByteArrayLiteral("-xc++") : QByteArrayLiteral("-xc"));
+    return result;
 }
 
 void addIncludes(QVector<const char*>* args, QVector<QByteArray>* otherArgs,
@@ -122,34 +121,31 @@ ParseSessionData::ParseSessionData(const QVector<UnsavedFile>& unsavedFiles, Cla
     const auto tuUrl = environment.translationUnitUrl();
     Q_ASSERT(!tuUrl.isEmpty());
 
-    auto languageStandard = environment.languageStandard().toLocal8Bit();
-    QVector<const char*> args = argsForSession(tuUrl.str(), options, languageStandard);
-    if (!options.testFlag(DisableSpellChecking)) {
-        // TODO: Check whether this slows down parsing noticably
-        // also see http://lists.cs.uiuc.edu/pipermail/cfe-commits/Week-of-Mon-20100705/032025.html
-        args << "-fspell-checking"; // note: disabled by default in CIndex
-    }
-    if (!options.testFlag(DisableDocumentationWarnings)) {
-        // TODO: Check whether this slows down parsing noticably
-        // according to llvm.org/devmtg/2012-11/Gribenko_CommentParsing.pdf this is about 5% with lots (> 10000) of documentation comments
-        args << "-Wdocumentation";
-    }
+    const auto arguments = argsForSession(tuUrl.str(), options, environment.parserSettings());
+    QVector<const char*> clangArguments;
+
     const auto& includes = environment.includes();
     const auto& pchInclude = environment.pchInclude();
+
     // uses QByteArray as smart-pointer for const char* ownership
-    QVector<QByteArray> otherArgs;
-    otherArgs.reserve(includes.system.size() + includes.project.size()
-                      + pchInclude.isValid() + 1);
-    args.reserve(args.size() + otherArgs.size());
+    QVector<QByteArray> smartArgs;
+    smartArgs.reserve(includes.system.size() + includes.project.size()
+                      + pchInclude.isValid() + arguments.size() + 1);
+    clangArguments.reserve(smartArgs.size());
+
+    std::transform(arguments.constBegin(), arguments.constEnd(),
+                   std::back_inserter(clangArguments),
+                   [] (const QByteArray &argument) { return argument.constData(); });
+
     // NOTE: the PCH include must come before all other includes!
     if (pchInclude.isValid()) {
-        args << "-include";
+        clangArguments << "-include";
         QByteArray pchFile = pchInclude.toLocalFile().toUtf8();
-        otherArgs << pchFile;
-        args << pchFile.constData();
+        smartArgs << pchFile;
+        clangArguments << pchFile.constData();
     }
-    addIncludes(&args, &otherArgs, includes.system, "-isystem");
-    addIncludes(&args, &otherArgs, includes.project, "-I");
+    addIncludes(&clangArguments, &smartArgs, includes.system, "-isystem");
+    addIncludes(&clangArguments, &smartArgs, includes.project, "-I");
 
     m_definesFile.open();
     QTextStream definesStream(&m_definesFile);
@@ -159,8 +155,8 @@ ParseSessionData::ParseSessionData(const QVector<UnsavedFile>& unsavedFiles, Cla
         definesStream << QStringLiteral("#define ") << it.key() << ' ' << it.value() << '\n';
     }
     definesStream.flush();
-    otherArgs << m_definesFile.fileName().toUtf8();
-    args << "-imacros" << otherArgs.last().constData();
+    smartArgs << m_definesFile.fileName().toUtf8();
+    clangArguments << "-imacros" << smartArgs.last().constData();
 
     QVector<CXUnsavedFile> unsaved;
     //For PrecompiledHeader, we don't want unsaved contents (and contents.isEmpty())
@@ -168,25 +164,16 @@ ParseSessionData::ParseSessionData(const QVector<UnsavedFile>& unsavedFiles, Cla
         unsaved = toClangApi(unsavedFiles);
     }
 
-#if CINDEX_VERSION_MINOR >= 23
     const CXErrorCode code = clang_parseTranslationUnit2(
         index->index(), tuUrl.byteArray().constData(),
-        args.constData(), args.size(),
+        clangArguments.constData(), clangArguments.size(),
         unsaved.data(), unsaved.size(),
         flags,
         &m_unit
     );
     if (code != CXError_Success) {
-        clangDebug() << "clang_parseTranslationUnit2 return with error code" << code;
+        qWarning() << "clang_parseTranslationUnit2 return with error code" << code;
     }
-#else
-    m_unit = clang_parseTranslationUnit(
-        index->index(), tuUrl.byteArray().constData(),
-        args.constData(), args.size(),
-        unsaved.data(), unsaved.size(),
-        flags
-    );
-#endif
 
     if (m_unit) {
         setUnit(m_unit);
@@ -196,7 +183,7 @@ ParseSessionData::ParseSessionData(const QVector<UnsavedFile>& unsavedFiles, Cla
             clang_saveTranslationUnit(m_unit, (tuUrl.byteArray() + ".pch").constData(), CXSaveTranslationUnit_None);
         }
     } else {
-        clangDebug() << "Failed to parse translation unit:" << tuUrl;
+        qWarning() << "Failed to parse translation unit:" << tuUrl;
     }
 }
 
@@ -273,7 +260,6 @@ QList<ProblemPointer> ParseSession::problemsForFile(CXFile file) const
     QList<ProblemPointer> problems;
 
     // extra clang diagnostics
-    static const ClangDiagnosticEvaluator evaluator;
     const uint numDiagnostics = clang_getNumDiagnostics(d->m_unit);
     problems.reserve(numDiagnostics);
     for (uint i = 0; i < numDiagnostics; ++i) {
@@ -286,7 +272,7 @@ QList<ProblemPointer> ParseSession::problemsForFile(CXFile file) const
             continue;
         }
 
-        ProblemPointer problem(evaluator.createProblem(diagnostic));
+        ProblemPointer problem(ClangDiagnosticEvaluator::createProblem(diagnostic, d->m_unit));
         problems << problem;
 
         clang_disposeDiagnostic(diagnostic);
@@ -295,13 +281,8 @@ QList<ProblemPointer> ParseSession::problemsForFile(CXFile file) const
     const QString path = QDir::cleanPath(ClangString(clang_getFileName(file)).toString());
     const IndexedString indexedPath(path);
 
-    // extract to-do problems
-    if (ClangUtils::isFileEqual(file, d->m_file)) {
-        // TODO: also extract problems from included files and put them into the correct places
-        // currently, this is not possible as we don't know ho
-        TodoExtractor extractor(unit(), indexedPath);
-        problems << extractor.problems();
-    }
+    TodoExtractor extractor(unit(), file);
+    problems << extractor.problems();
 
     // other problem sources
     if (ClangHelpers::isHeader(path) && !clang_isFileMultipleIncludeGuarded(unit(), file)

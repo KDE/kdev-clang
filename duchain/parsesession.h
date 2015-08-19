@@ -50,8 +50,6 @@ public:
 
     enum Option {
         NoOption,                     ///< No special options
-        DisableSpellChecking,         ///< Disable -fspell-checking
-        DisableDocumentationWarnings, ///< Disable -Wdocumentation
         SkipFunctionBodies,           ///< Pass CXTranslationUnit_SkipFunctionBodies (likely unwanted)
         PrecompiledHeader             ///< Pass CXTranslationUnit_PrecompiledPreamble and others to cache precompiled headers
     };
@@ -76,8 +74,8 @@ private:
 
     QMutex m_mutex;
 
-    CXFile m_file;
-    CXTranslationUnit m_unit;
+    CXFile m_file = nullptr;
+    CXTranslationUnit m_unit = nullptr;
     ClangParsingEnvironment m_environment;
     /// TODO: share this file for all TUs that use the same defines (probably most in a project)
     ///       best would be a PCH, if possible

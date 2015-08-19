@@ -12,22 +12,18 @@ cmake_minimum_required(VERSION 2.8.12)
 find_package (ECM 0.0.9 REQUIRED NO_MODULE)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${ECM_MODULE_PATH})
 
+include(GenerateExportHeader)
 include(ECMAddTests)
 include(KDEInstallDirs)
 include(KDECMakeSettings)
 include(KDECompilerSettings)
 
-add_definitions(
-    -DQT_USE_FAST_CONCATENATION -DQT_USE_FAST_OPERATOR_PLUS -DQT_NO_URL_CAST_FROM_STRING
-    -DQT_NO_CAST_FROM_ASCII -DQT_NO_CAST_TO_ASCII -DQT_NO_CAST_FROM_BYTEARRAY
-)
-
 find_package(Qt5 REQUIRED Core Widgets Test)
-find_package(KF5 REQUIRED COMPONENTS KDELibs4Support ThreadWeaver TextEditor I18n)
+find_package(KF5 REQUIRED COMPONENTS I18n ItemModels ThreadWeaver TextEditor)
 find_package(KDevPlatform ${KDEVPLATFORM_VERSION} REQUIRED)
 find_package(KDevelop REQUIRED)
 
-find_package(Clang 3.4)
+find_package(Clang 3.5)
 set_package_properties(Clang PROPERTIES
     TYPE REQUIRED
     PURPOSE "LibClang is a high level C interface to clang"
@@ -68,11 +64,18 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/libs
 )
 
+add_subdirectory(tests)
+
+add_definitions(
+    -DQT_USE_FAST_CONCATENATION -DQT_USE_FAST_OPERATOR_PLUS -DQT_NO_URL_CAST_FROM_STRING
+    -DQT_NO_CAST_FROM_ASCII -DQT_NO_CAST_TO_ASCII -DQT_NO_CAST_FROM_BYTEARRAY
+)
+
+add_subdirectory(clangsettings)
 add_subdirectory(duchain)
 add_subdirectory(codecompletion)
 add_subdirectory(codegen)
 add_subdirectory(util)
-add_subdirectory(tests)
 
 if(${BUILD_REFACTORINGS})
     add_definitions(-DBUILD_REFACTORINGS)
@@ -92,6 +95,7 @@ set(LINK_LIBS
     kdevclangcodecompletion
     kdevclangcodegen
     kdevclangutil
+    sessionsettings
 
     KF5::ThreadWeaver
     KF5::TextEditor
