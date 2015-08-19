@@ -42,6 +42,7 @@
 #include "changesignaturerefactoring.h"
 #include "encapsulatefieldrefactoring.h"
 #include "extractvariablerefactoring.h"
+#include "extractfunctionrefactoring.h"
 #include "debug.h"
 
 using namespace std;
@@ -476,6 +477,11 @@ void ExprRangeRefactorings::run(const MatchFinder::MatchResult &result)
         return;
     }
     const Expr *expr = result.Nodes.getNodeAs<Expr>("Expr");
+    if (llvm::isa<CXXThisExpr>(expr)) {
+        return;
+        // It is not specially useful to extract 'this' pointer
+        // shape of AST and behavior of visitors is a technical reason to disable this
+    }
     if (isInRange(result, expr->getSourceRange())) {
         m_expr = expr; // overridden by most descent node (can be easily extended to return all...)
         m_sourceManager = result.SourceManager;
@@ -488,6 +494,11 @@ void ExprRangeRefactorings::onEndOfTranslationUnit()
     if (m_expr) {
         m_refactorings.push_back(
             new ExtractVariableRefactoring(m_expr, m_astContext, m_sourceManager));
+        ExtractFunctionRefactoring *refactoring =
+            ExtractFunctionRefactoring::create(m_expr, m_astContext, m_sourceManager);
+        if (refactoring) {
+            m_refactorings.push_back(refactoring);
+        }
     }
     m_expr = nullptr;
 }

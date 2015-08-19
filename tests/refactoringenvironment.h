@@ -46,8 +46,17 @@ public:
     // Note: registering file and header with the same name is undefined behavior
 
     clang::tooling::Replacements runTool(
-        std::function<void(clang::tooling::RefactoringTool &)> runner);
-    // Or return Replacements immediately
+        std::function<void(clang::tooling::RefactoringTool &)> runner) const;
+
+    // TODO: enable if Stmt is a clang::Stmt
+    template<class Stmt>
+    void findNode(std::function<bool(const Stmt *)> comparator,
+                  std::function<void(const Stmt *, clang::ASTContext *)> callback) const;
+
+    void findStmt(std::function<bool(const clang::Stmt *)> comparator,
+                  std::function<void(const clang::Stmt *, clang::ASTContext *)> callback) const;
+
+    void setVerboseVerify(bool verbose = true);
 
     void verifyResult(const clang::tooling::Replacements &replacements, const std::string &fileName,
                       const std::string &newCode);
@@ -57,11 +66,32 @@ private:
     // file name, code, compile flags
     std::vector<std::tuple<std::string, std::string, std::string>> m_files;
     std::vector<std::tuple<std::string, std::string>> m_headers;
+    bool m_verboseVerify = false;
 };
 
 std::unique_ptr<DeclarationComparator> declarationComparator(
     std::function<bool(const clang::Decl *decl)> equivalentTo);
 
 std::string serialize(const clang::tooling::Replacements &replacements);
+
+template<class Stmt>
+void RefactoringEnvironment::findNode(
+    std::function<bool(const Stmt *)> comparator,
+    std::function<void(const Stmt *, clang::ASTContext *)> callback) const
+{
+    findStmt(
+        [comparator](const clang::Stmt *stmt)
+        {
+            if (const Stmt *precStmt = llvm::dyn_cast<Stmt>(stmt)) {
+                return comparator(precStmt);
+            } else {
+                return false;
+            };
+        },
+        [callback](const clang::Stmt *stmt, clang::ASTContext *astContext)
+        {
+            callback(llvm::cast<Stmt>(stmt), astContext);
+        });
+}
 
 #endif //KDEV_CLANG_REFACTORINGENVIRONMENT_H

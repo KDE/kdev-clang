@@ -23,12 +23,16 @@
 #include <sstream>
 #include <algorithm>
 #include <QtTest>
+#include <clang/AST/Stmt.h>
+#include <clang/ASTMatchers/ASTMatchers.h>
+#include <clang/ASTMatchers/ASTMatchFinder.h>
 #include "refactoringenvironment.h"
 #include "declarationcomparator.h"
 
 using namespace std;
 using namespace clang;
 using namespace clang::tooling;
+using namespace clang::ast_matchers;
 
 RefactoringEnvironment::RefactoringEnvironment() = default;
 
@@ -69,6 +73,59 @@ static string stripSpaces(const string &in)
     return result;
 }
 
+void RefactoringEnvironment::findStmt(
+    std::function<bool(const Stmt *)> comparator,
+    std::function<void(const Stmt *, ASTContext *)> callback) const
+{
+    class Callback : public MatchFinder::MatchCallback
+    {
+    public:
+        Callback(std::function<bool(const Stmt *)> comparator,
+                 std::function<void(const Stmt *, ASTContext *)> callback)
+            : m_comparator(comparator)
+              , m_callback(callback)
+        {
+        }
+
+        virtual void run(const MatchFinder::MatchResult &result) override
+        {
+            auto stmt = result.Nodes.getNodeAs<Stmt>("Stmt");
+            if (m_comparator(stmt)) {
+                astContext = result.Context;
+                matches.push_back(stmt);
+            }
+        }
+
+        virtual void onEndOfTranslationUnit() override
+        {
+            for (auto stmt : matches) {
+                m_callback(stmt, astContext);
+            }
+            matches.clear();
+        }
+
+        vector<const Stmt *> matches;
+        ASTContext *astContext;
+
+    private:
+        std::function<bool(const Stmt *)> m_comparator;
+        std::function<void(const Stmt *, ASTContext *)> m_callback;
+    } findCallback(comparator, callback);
+    auto stmtMatcher = stmt().bind("Stmt");
+    MatchFinder finder;
+    finder.addMatcher(stmtMatcher, &findCallback);
+    runTool(
+        [&finder](RefactoringTool &tool)
+        {
+            tool.run(newFrontendActionFactory(&finder).get());
+        });
+}
+
+void RefactoringEnvironment::setVerboseVerify(bool verbose)
+{
+    m_verboseVerify = verbose;
+}
+
 void RefactoringEnvironment::verifyResult(const Replacements &replacements, const string &fileName,
                                           const string &newCode)
 {
@@ -97,6 +154,10 @@ void RefactoringEnvironment::verifyResult(const Replacements &replacements, cons
     }
 
     string result = applyAllReplacements(code, filteredReplacements);
+    if (m_verboseVerify) {
+        llvm::outs() << "Have:     " << stripSpaces(result) << "\n";
+        llvm::outs() << "Expected: " << stripSpaces(newCode) << "\n";
+    }
     QCOMPARE(stripSpaces(result), stripSpaces(newCode));
 }
 
@@ -114,7 +175,7 @@ private:
 };
 }
 
-Replacements RefactoringEnvironment::runTool(function<void(RefactoringTool &)> runner)
+Replacements RefactoringEnvironment::runTool(function<void(RefactoringTool &)> runner) const
 {
     FakeCompilationDatabase db(m_files);
     RefactoringTool tool(db, db.getAllFiles());
