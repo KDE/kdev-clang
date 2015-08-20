@@ -77,9 +77,10 @@ private:
 };
 }
 
-ChangeSignatureRefactoring::ChangeSignatureRefactoring(const FunctionDecl *functionDecl)
+ChangeSignatureRefactoring::ChangeSignatureRefactoring(const FunctionDecl *functionDecl,
+                                                       ASTContext *astContext)
     : Refactoring(nullptr)
-    , m_infoPack(InfoPack::fromFunctionDecl(functionDecl))
+    , m_infoPack(InfoPack::fromFunctionDecl(functionDecl, astContext))
 {
 }
 

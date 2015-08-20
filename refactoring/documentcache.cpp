@@ -131,7 +131,7 @@ bool DocumentCache::fileIsOpened(llvm::StringRef fileName) const
         QUrl::fromLocalFile(QString::fromStdString(fileName.str()))) != nullptr;
 }
 
-llvm::StringRef DocumentCache::contentOfOpenedFile(llvm::StringRef fileName)
+std::string DocumentCache::contentOfOpenedFile(llvm::StringRef fileName)
 {
     auto i = m_cachedFiles.find(fileName);
     if (i != m_cachedFiles.end()) {

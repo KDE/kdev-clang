@@ -190,4 +190,6 @@ std::string suggestSetterName(const std::string &fieldName);
 
 std::string functionName(const std::string &functionDeclaration, const std::string &fallbackName);
 
+std::string toString(clang::QualType type, const clang::LangOptions &langOpts);
+
 #endif //KDEV_CLANG_UTILS_H

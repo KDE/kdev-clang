@@ -29,12 +29,14 @@
 using namespace clang;
 
 std::unique_ptr<const ChangeSignatureRefactoring::InfoPack>
-ChangeSignatureRefactoring::InfoPack::fromFunctionDecl(const FunctionDecl *functionDecl)
+ChangeSignatureRefactoring::InfoPack::fromFunctionDecl(const FunctionDecl *functionDecl,
+                                                       ASTContext *astContext)
 {
-    return std::unique_ptr<const InfoPack>(new InfoPack(functionDecl));
+    return std::unique_ptr<const InfoPack>(new InfoPack(functionDecl, astContext));
 }
 
-ChangeSignatureRefactoring::InfoPack::InfoPack(const FunctionDecl *functionDecl)
+ChangeSignatureRefactoring::InfoPack::InfoPack(const FunctionDecl *functionDecl,
+                                               ASTContext *astContext)
     : m_declComparator(::declarationComparator(functionDecl))
 {
     // We don't rename constructors, destructors, operators (but we may rename type)
@@ -43,8 +45,8 @@ ChangeSignatureRefactoring::InfoPack::InfoPack(const FunctionDecl *functionDecl)
                    isa<CXXConversionDecl>(functionDecl) ||
                    functionDecl->isOverloadedOperator();
     m_functionName = functionDecl->getName();
-    m_returnType = functionDecl->getReturnType().getAsString();
+    m_returnType = toString(functionDecl->getReturnType(), astContext->getLangOpts());
     for (auto p : functionDecl->params()) {
-        m_parameters.emplace_back(p->getType().getAsString(), p->getName());
+        m_parameters.emplace_back(toString(p->getType(), astContext->getLangOpts()), p->getName());
     }
 }

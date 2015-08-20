@@ -57,7 +57,7 @@ public:
                                                const std::string &nameForThisPtr);
 
 private:
-    RedeclarationChain m_declDispatcher;
+    std::unique_ptr<DeclarationComparator> m_declDispatcher;
     bool m_usesThisPtr = true; // safe default
     bool m_usesThisPtrStateKnown = false;
 };

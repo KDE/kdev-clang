@@ -54,7 +54,8 @@ EncapsulateFieldRefactoring::ChangePack::ChangePack(const std::string &fieldDesc
 }
 
 unique_ptr<EncapsulateFieldRefactoring::ChangePack>
-EncapsulateFieldRefactoring::ChangePack::fromDeclaratorDecl(const DeclaratorDecl *decl)
+EncapsulateFieldRefactoring::ChangePack::fromDeclaratorDecl(const DeclaratorDecl *decl,
+                                                            ASTContext *astContext)
 {
     auto currentAccess = decl->getAccess();
     const auto &srcMgr = decl->getASTContext().getSourceManager();
@@ -62,7 +63,7 @@ EncapsulateFieldRefactoring::ChangePack::fromDeclaratorDecl(const DeclaratorDecl
     string fieldDescription = codeFromASTNode(decl, srcMgr, langOpts);
     auto fieldQualType = decl->getType().getNonReferenceType();
     fieldQualType.removeLocalConst();
-    auto fieldTypeString = fieldQualType.getAsString();
+    auto fieldTypeString = toString(fieldQualType, astContext->getLangOpts());
     auto fieldName = decl->getName();
     string getterName = suggestGetterName(fieldName);
     string setterName = suggestSetterName(fieldName);

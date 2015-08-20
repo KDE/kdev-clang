@@ -55,7 +55,7 @@ public:
 
 private:
     std::string m_declaration;
-    RedeclarationChain m_declDispatcher;
+    std::unique_ptr<DeclarationComparator> m_declDispatcher;
     bool m_declarationInSourceIsADefinition;
     bool m_isStatic;
 };

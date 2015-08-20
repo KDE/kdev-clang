@@ -29,6 +29,8 @@
 // Clang
 #include <clang/AST/DeclBase.h>
 
+#include "utils.h"
+
 class DeclarationComparator;
 
 /**
@@ -55,7 +57,7 @@ private:
 
 private:
     const DeclarationComparator *m_declComparator;
-    mutable std::unordered_map<const clang::Decl *, bool> m_cache;
+    mutable std::unordered_map<LexicalLocation, bool> m_cache;
 };
 
 

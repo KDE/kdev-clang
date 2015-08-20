@@ -33,9 +33,6 @@ class DeclarationComparator;
 /**
  * Encapsulates field - changes access to "private", generates accessor (and optionally mutator) and
  * tries to adapt existing code to use of these new functions.
- * This refactoring makes slightly stronger assumptions about code base.
- * Particularly it assumes, that all RecordDecls being subject of this refactoring have _one_
- * definition (for example in some header file, which can be then included in many places).
  */
 class EncapsulateFieldRefactoring : public Refactoring
 {
@@ -44,7 +41,7 @@ class EncapsulateFieldRefactoring : public Refactoring
 public:
     class ChangePack;
 
-    EncapsulateFieldRefactoring(const clang::DeclaratorDecl *decl);
+    EncapsulateFieldRefactoring(const clang::DeclaratorDecl *decl, clang::ASTContext *astContext);
     ~EncapsulateFieldRefactoring();
 
     virtual ResultType invoke(RefactoringContext *ctx);
@@ -52,8 +49,8 @@ public:
 
 private:
     std::unique_ptr<ChangePack> m_changePack;
-    RedeclarationChain m_declDispatcher;
-    RedeclarationChain m_recordDeclDispatcher;
+    std::unique_ptr<DeclarationComparator> m_declDispatcher;
+    std::unique_ptr<DeclarationComparator> m_recordDeclDispatcher;
     std::string m_recordName;
 };
 

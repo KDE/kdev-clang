@@ -62,7 +62,7 @@ public:
 
     bool fileIsOpened(llvm::StringRef fileName) const;
 
-    llvm::StringRef contentOfOpenedFile(llvm::StringRef fileName);
+    std::string contentOfOpenedFile(llvm::StringRef fileName);
 
     clang::tooling::RefactoringTool &refactoringTool();
 

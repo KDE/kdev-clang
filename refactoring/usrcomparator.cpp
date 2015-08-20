@@ -20,42 +20,34 @@
 */
 
 // Clang
-#include <clang/AST/Decl.h>
+#include <clang/Index/USRGeneration.h>
+#include <llvm/Support/raw_ostream.h>
 
-#include "tudecldispatcher.h"
-#include "declarationcomparator.h"
-#include "utils.h"
+#include "usrcomparator.h"
+#include "debug.h"
 
-TUDeclDispatcher::TUDeclDispatcher(const DeclarationComparator *declComparator)
-    : m_declComparator(declComparator)
+using namespace std;
+using namespace clang;
+
+UsrComparator::UsrComparator()
 {
 }
 
-bool TUDeclDispatcher::equivalent(const clang::Decl *decl) const
+unique_ptr<UsrComparator> UsrComparator::create(const Decl *decl)
 {
-    if (!decl) {
-        return false;
-    }
-    decl = decl->getCanonicalDecl();
-    auto location = lexicalLocation(decl);
-    auto i = m_cache.find(location);
-    if (i != m_cache.end()) {
-        return i->second;
+    auto result = unique_ptr<UsrComparator>(new UsrComparator());
+    if (index::generateUSRForDecl(decl, result->m_mangledName)) {
+        return nullptr;
     } else {
-        bool result = m_declComparator->equivalentTo(decl);
-        m_cache[location] = result;
         return result;
     }
 }
 
-bool TUDeclDispatcher::equivalentImpl(const clang::DeclContext *declContext) const
+bool UsrComparator::equivalentTo(const Decl *decl) const
 {
-    if (!declContext) {
+    auto mangledDecl = create(decl);
+    if (!mangledDecl) {
         return false;
     }
-    auto asDecl = llvm::dyn_cast<clang::Decl>(declContext);
-    Q_ASSERT(asDecl != nullptr);
-    // every (instance) of DeclContext should be a Decl
-    // http://clang.llvm.org/doxygen/classclang_1_1DeclContext.html#details
-    return equivalent(asDecl);
+    return m_mangledName == mangledDecl->m_mangledName;
 }

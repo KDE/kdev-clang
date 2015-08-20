@@ -44,7 +44,8 @@ public:
                clang::AccessSpecifier getterAccess, clang::AccessSpecifier setterAccess,
                bool createSetter, bool isStatic);
 
-    static std::unique_ptr<ChangePack> fromDeclaratorDecl(const clang::DeclaratorDecl *decl);
+    static std::unique_ptr<ChangePack> fromDeclaratorDecl(const clang::DeclaratorDecl *decl,
+                                                          clang::ASTContext *astContext);
 
     const std::string &fieldDescription() const
     {

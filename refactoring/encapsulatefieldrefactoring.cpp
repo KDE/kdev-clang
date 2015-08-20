@@ -83,11 +83,12 @@ private:
 };
 }
 
-EncapsulateFieldRefactoring::EncapsulateFieldRefactoring(const DeclaratorDecl *decl)
+EncapsulateFieldRefactoring::EncapsulateFieldRefactoring(const DeclaratorDecl *decl,
+                                                         ASTContext *astContext)
     : Refactoring(nullptr)
-    , m_changePack(ChangePack::fromDeclaratorDecl(decl))
-    , m_declDispatcher(decl)
-    , m_recordDeclDispatcher(llvm::dyn_cast<Decl>(decl->getDeclContext()))
+    , m_changePack(ChangePack::fromDeclaratorDecl(decl, astContext))
+    , m_declDispatcher(declarationComparator(decl))
+    , m_recordDeclDispatcher(declarationComparator(llvm::dyn_cast<Decl>(decl->getDeclContext())))
     , m_recordName(llvm::dyn_cast<RecordDecl>(decl->getDeclContext())->getName())
 {
 }
@@ -102,14 +103,14 @@ Refactoring::ResultType EncapsulateFieldRefactoring::invoke(RefactoringContext *
     }
 
     const ChangePack *changePack = m_changePack.get(); // C++14...
-    auto declDispatcher = m_declDispatcher;
-    auto recordDeclDispatcher = m_recordDeclDispatcher;
+    auto declDispatcher = m_declDispatcher.get();
+    auto recordDeclDispatcher = m_recordDeclDispatcher.get();
     auto recordName = m_recordName;
     return ctx->scheduleRefactoring(
         [changePack, declDispatcher, recordDeclDispatcher, recordName](RefactoringTool &tool)
         {
-            Refactorings::EncapsulateField::run(tool, changePack, &declDispatcher,
-                                                &recordDeclDispatcher, recordName);
+            Refactorings::EncapsulateField::run(tool, changePack, declDispatcher,
+                                                recordDeclDispatcher, recordName);
             return tool.getReplacements();
         }
     );
@@ -235,7 +236,7 @@ void Translator::run(const MatchFinder::MatchResult &Result)
     auto assignOperatorCall = Result.Nodes.getNodeAs<CXXOperatorCallExpr>(
         "AssignCXXOperatorCallExpr");
     if (assignOperatorCall) {
-        auto assignee = assignOperatorCall->getArg(0);
+        auto assignee = assignOperatorCall->getArg(0)->IgnoreParenImpCasts();
         const Decl *decl;
         if (llvm::isa<MemberExpr>(assignee)) {
             decl = llvm::dyn_cast<MemberExpr>(assignee)->getMemberDecl();

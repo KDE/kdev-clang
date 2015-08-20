@@ -39,7 +39,8 @@ public:
     class InfoPack;
     class ChangePack;
 
-    ChangeSignatureRefactoring(const clang::FunctionDecl *functionDecl);
+    ChangeSignatureRefactoring(const clang::FunctionDecl *functionDecl,
+                               clang::ASTContext *astContext);
 
     virtual ~ChangeSignatureRefactoring() override;
 

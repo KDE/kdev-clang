@@ -97,7 +97,8 @@ ExtractFunctionRefactoring *ExtractFunctionRefactoring::create(const clang::Expr
         string arguments = "(";
         string invocation = "(";
         for (auto entry : visitor.usedDecls) {
-            arguments += entry.second->getType().getAsString() + " " + entry.first->getName().str();
+            arguments += toString(entry.second->getType(), astContext->getLangOpts()) + " " +
+                         entry.first->getName().str();
             arguments += ", ";
             invocation += codeFromASTNode(entry.second, *sourceManager, astContext->getLangOpts());
             invocation += ", ";
@@ -120,7 +121,7 @@ ExtractFunctionRefactoring *ExtractFunctionRefactoring::create(const clang::Expr
                     return name + invocation;
                 });
         }
-        string returnType = expr->getType().getAsString();
+        string returnType = toString(expr->getType(), astContext->getLangOpts());
         const CXXMethodDecl *asMethod = llvm::dyn_cast<CXXMethodDecl>(declContext);
         const bool wantStatic = asMethod && (!visitor.usesThis);
         for (const FunctionDecl *decl : declContext->redecls()) {

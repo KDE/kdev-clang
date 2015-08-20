@@ -79,9 +79,7 @@ ExtractVariableRefactoring::ExtractVariableRefactoring(const clang::Expr *expr,
             Replacement pattern(*sourceManager, nodeInCpndStmt->getLocStart(), 0, "");
             m_filenameVariablePlacement = pattern.getFilePath();
             m_offsetVariablePlacement = pattern.getOffset();
-            PrintingPolicy policy(astContext->getLangOpts());
-            policy.SuppressUnwrittenScope = true;
-            m_variableType = expr->getType().getAsString(policy);
+            m_variableType = toString(expr->getType(),astContext->getLangOpts());
         }
     }
 }

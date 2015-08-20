@@ -62,7 +62,7 @@ private:
 
 InstanceToStaticRefactoring::InstanceToStaticRefactoring(const CXXMethodDecl *decl)
     : Refactoring(nullptr)
-    , m_declDispatcher(decl)
+    , m_declDispatcher(declarationComparator(decl))
 {
     for (FunctionDecl *redecl : decl->redecls()) {
         if (redecl->isThisDeclarationADefinition()) {
@@ -164,7 +164,7 @@ InstanceToStaticRefactoring::InstanceToStaticCallback::InstanceToStaticCallback(
     InstanceToStaticRefactoring *refactoring, const string &nameForThisPtr)
     : m_refactoring(refactoring)
     , m_nameForThisPtr(nameForThisPtr)
-    , m_declDispatcher(&refactoring->m_declDispatcher)
+    , m_declDispatcher(refactoring->m_declDispatcher.get())
 {
 }
 
@@ -220,9 +220,7 @@ void InstanceToStaticRefactoring::InstanceToStaticCallback::handleMethodDecl(
         replacements.insert(Replacement(*sourceManager, methodDecl->getLocStart(), 0, "static "));
     }
     auto thisType = methodDecl->getThisType(*astContext).getUnqualifiedType();
-    PrintingPolicy policy(astContext->getLangOpts());
-    policy.SuppressUnwrittenScope = true;
-    auto thisTypeS = thisType.getAsString(policy);
+    auto thisTypeS = toString(thisType, astContext->getLangOpts());
     auto selfArgS = thisTypeS + " " + m_nameForThisPtr;
     if (methodDecl->getNumParams() > 0) {
         selfArgS += ", ";

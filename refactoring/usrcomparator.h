@@ -19,17 +19,35 @@
     Boston, MA 02110-1301, USA.
 */
 
-#include "debug.h"
+#ifndef KDEV_CLANG_USRCOMPARATOR_H
+#define KDEV_CLANG_USRCOMPARATOR_H
 
-Q_LOGGING_CATEGORY(KDEV_CLANG_REFACTORING, "kdevelop.plugins.clang.refactoring")
+// Clang
+#include <clang/AST/DeclBase.h>
 
+#include "declarationcomparator.h"
 
-QDebug operator<<(QDebug dbg, const std::string &string)
+/**
+ * Comparator based on Clang Unified Symbol Resolution.
+ * I expect this simple class to be "one to rule all" implementation of @c DeclarationComparator
+ */
+class UsrComparator : public DeclarationComparator
 {
-    return dbg << string.c_str();
-}
+public:
+    /**
+     * Create instance. May fail (return @c nullptr) if @c clang::index::generateUSRForDecl refuse
+     * to generate mangled name.
+     */
+    static std::unique_ptr<UsrComparator> create(const clang::Decl *decl);
 
-QDebug operator<<(QDebug dbg, llvm::StringRef string)
-{
-    return dbg << QString::fromLocal8Bit(string.data(), string.size());
-}
+    virtual bool equivalentTo(const clang::Decl *decl) const override;
+
+private:
+    UsrComparator();
+
+private:
+    llvm::SmallVector<char, 256> m_mangledName;
+};
+
+
+#endif //KDEV_CLANG_USRCOMPARATOR_H

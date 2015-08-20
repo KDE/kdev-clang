@@ -39,8 +39,8 @@ class DeclarationComparator;
 class ChangeSignatureRefactoring::InfoPack
 {
 public:
-    static std::unique_ptr<const InfoPack> fromFunctionDecl(
-        const clang::FunctionDecl *functionDecl);
+    static std::unique_ptr<const InfoPack> fromFunctionDecl(const clang::FunctionDecl *functionDecl,
+                                                            clang::ASTContext *astContext);
 
     const std::string &functionName() const
     {
@@ -68,7 +68,7 @@ public:
     }
 
 private:
-    InfoPack(const clang::FunctionDecl *functionDecl);
+    InfoPack(const clang::FunctionDecl *functionDecl, clang::ASTContext *astContext);
 
 private:
     std::string m_functionName;

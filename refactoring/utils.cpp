@@ -23,6 +23,7 @@
 
 // Qt
 #include <QString>
+#include <QFileInfo>
 
 // Clang
 #include <clang/Lex/Lexer.h>
@@ -32,6 +33,7 @@
 #include "redeclarationchain.h"
 #include "declarationsymbol.h"
 #include "debug.h"
+#include "usrcomparator.h"
 
 using namespace clang;
 using namespace clang::tooling;
@@ -129,8 +131,8 @@ static KTextEditor::Range toRange(StringRef text, unsigned offset, unsigned leng
 }
 
 /// Decides if file should be taken from cache or file system and takes it
-static ErrorOr<StringRef> readFileContent(StringRef name, DocumentCache *cache,
-                                          FileManager &fileManager)
+static ErrorOr<std::string> readFileContent(StringRef name, DocumentCache *cache,
+                                            FileManager &fileManager)
 {
     if (cache->fileIsOpened(name)) {
         // It would be great if we could get rid of this use of cache
@@ -140,34 +142,31 @@ static ErrorOr<StringRef> readFileContent(StringRef name, DocumentCache *cache,
         if (!r) {
             return r.getError();
         }
-        return r.get()->getBuffer();
+        return r.get()->getBuffer().str();
     }
 }
 
-static ErrorOr<DocumentChange> toDocumentChange(const Replacement &replacement,
-                                                DocumentCache *cache,
-                                                FileManager &fileManager)
+static ErrorOr<DocumentChangePointer> toDocumentChange(const Replacement &replacement,
+                                                       DocumentCache *cache,
+                                                       FileManager &fileManager)
 {
     // (Clang) FileManager is unaware of cache (from ClangTool) (cache is applied just before run)
     // SourceManager enumerates columns counting from 1 (probably also lines)
-    // Is ClangTool doing refactoring on mapped files? Certainly Replacements cannot be applied
-    // on cache (not a problem - Refactorings are translated to DocumentChangeSet HERE)
 
-    // IndexedString constructor has this limitation
-    Q_ASSERT(replacement.getFilePath().size() <=
-             std::numeric_limits<unsigned short>::max());
+    ErrorOr<std::string> fileContent = readFileContent(replacement.getFilePath(), cache,
+                                                       fileManager);
 
-    ErrorOr<StringRef> fileContent = readFileContent(replacement.getFilePath(), cache, fileManager);
     if (!fileContent) {
         return fileContent.getError();
     }
-    auto result = DocumentChange(
-        IndexedString(
-            replacement.getFilePath().data(),
-            static_cast<unsigned short>(
-                replacement.getFilePath().size()
-            )
-        ),
+
+    // workaround deduplicate issues in DocumentChangeSet
+    QString filePath = QFileInfo(
+        QString::fromLocal8Bit(replacement.getFilePath().data(), replacement.getFilePath().size()))
+        .canonicalFilePath();
+
+    auto result = DocumentChangePointer(new DocumentChange(
+        IndexedString(filePath),
         toRange(
             fileContent.get(),
             replacement.getOffset(),
@@ -176,8 +175,8 @@ static ErrorOr<DocumentChange> toDocumentChange(const Replacement &replacement,
         QString(), // we don't have this data
         QString::fromStdString(replacement.getReplacementText())
         // NOTE: above conversion assumes UTF-8 encoding
-    );
-    result.m_ignoreOldText = true;
+    ));
+    result->m_ignoreOldText = true;
     return result;
 }
 
@@ -189,14 +188,44 @@ ErrorOr<DocumentChangeSet> toDocumentChangeSet(const Replacements &replacements,
     // reasonable in some cases (renaming of a class, ...). This feature may be used outside to
     // further polish result.
     DocumentChangeSet result;
+    std::error_code lastError;
+    QList<DocumentChangePointer> changes;
     for (const auto &r : replacements) {
-        ErrorOr<DocumentChange> documentChange = toDocumentChange(r, cache, fileManager);
+        ErrorOr<DocumentChangePointer> documentChange = toDocumentChange(r, cache, fileManager);
         if (!documentChange) {
-            return documentChange.getError();
+            lastError = documentChange.getError();
+            refactorWarning() << "Unable to translate replacement: " << r.toString();
+        } else {
+            bool duplicate = false;
+            // this slow O(n^2) algorithm can be (quite) easily improved to almost O(n) (hash)
+            for (auto existingChange : changes) {
+                if (existingChange->m_newText == documentChange.get()->m_newText &&
+                    existingChange->m_range == documentChange.get()->m_range &&
+                    existingChange->m_document == documentChange.get()->m_document) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) {
+                result.addChange(documentChange.get());
+                changes.push_back(documentChange.get());
+                refactorDebug() << "Translated replacement: " << documentChange.get()->m_document <<
+                                documentChange.get()->m_range.start().line() <<
+                                documentChange.get()->m_range.start().column() <<
+                                documentChange.get()->m_range.end().line() <<
+                                documentChange.get()->m_range.end().column() <<
+                                documentChange.get()->m_newText;
+            }
         }
-        result.addChange(documentChange.get());
     }
-    return result;
+    if (!changes.empty()) {
+        return result;
+    } else if (lastError) {
+        return lastError;
+    } else {
+        // it's ok, we just don't have replacements
+        return result;
+    }
 }
 
 /**
@@ -237,7 +266,6 @@ ErrorOr<unsigned> toOffset(const std::string &fileName, const KTextEditor::Curso
     }
     int currentColumn = 0;
     while (currentColumn < position.column()) {
-        // FIXME: cursor after last character crashes
         Q_ASSERT(i != fileContent.get().end());
         i++;
         currentColumn++;
@@ -321,6 +349,18 @@ LexicalLocation lexicalLocation(const Decl *decl)
 // here
 std::unique_ptr<DeclarationComparator> declarationComparator(const Decl *decl)
 {
+    // First try to use Clang USR
+    auto usrComparator = UsrComparator::create(decl);
+    if (usrComparator) {
+        return std::move(usrComparator);
+    } else {
+        refactorDebug() << "clang::index::generateUSRForDecl refused to mangle:";
+        std::string msg;
+        llvm::raw_string_ostream ostream(msg);
+        decl->dump(ostream);
+        refactorDebug() << ostream.str();
+    }
+    // fallback
     if (const NamedDecl *namedDecl = llvm::dyn_cast<NamedDecl>(decl)) {
         auto linkage = namedDecl->getLinkageInternal();
         if (linkage == ExternalLinkage) {
@@ -419,4 +459,11 @@ std::string functionName(const std::string &functionDeclaration, const std::stri
         return fallbackName;
     }
     return functionDecl->getName();
+}
+
+std::string toString(clang::QualType type, const clang::LangOptions &langOpts)
+{
+    PrintingPolicy policy(langOpts);
+    policy.SuppressUnwrittenScope = true;
+    return type.getAsString(policy);
 }
