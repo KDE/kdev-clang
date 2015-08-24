@@ -47,7 +47,7 @@ public:
     EncapsulateFieldRefactoring(const clang::DeclaratorDecl *decl);
     ~EncapsulateFieldRefactoring();
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx);
+    virtual ResultType invoke(RefactoringContext *ctx);
     virtual QString name() const;
 
 private:

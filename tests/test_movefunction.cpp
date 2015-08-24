@@ -76,7 +76,10 @@ void TestMoveFunction::testMoveComplex()
                 }
             }
             if (refactoring) {
-                replacements = refactoring->doRefactoring(tool, "Target");
+                auto result = refactoring->doRefactoring(tool, "Target");
+                if (result) {
+                    replacements = result.get();
+                }
             }
         });
 

@@ -131,6 +131,10 @@ void ContextMenuMutator::endFillingContextMenu(const QVector<Refactoring *> &ref
             auto changes = toDocumentChangeSet(result.get(), ctx->cache,
                                                ctx->cache->refactoringTool().getFiles());
             if (!changes) {
+                refactorWarning() << "Unable to translate Replacements:";
+                for (auto replacement : result.get()) {
+                    refactorWarning() << replacement.toString();
+                }
                 ctx->reportError(changes.getError());
             } else {
                 changes.get().applyAllChanges();

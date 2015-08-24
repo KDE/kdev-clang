@@ -44,14 +44,14 @@ public:
     explicit MoveFunctionRefactoring(const clang::CXXMethodDecl *decl,
                                      clang::ASTContext &astContext);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+    virtual ResultType invoke(RefactoringContext *ctx) override;
     virtual QString name() const override;
 
     /**
      * Essence of this refactoring
      */
-    clang::tooling::Replacements doRefactoring(clang::tooling::RefactoringTool &tool,
-                                               const std::string &targetRecord);
+    ResultType doRefactoring(clang::tooling::RefactoringTool &tool,
+                             const std::string &targetRecord);
 
 private:
     std::string m_declaration;

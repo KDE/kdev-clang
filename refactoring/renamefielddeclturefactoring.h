@@ -37,7 +37,7 @@ public:
     RenameFieldDeclTURefactoring(const std::string &fileName, unsigned offset,
                                  llvm::StringRef oldName);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+    virtual ResultType invoke(RefactoringContext *ctx) override;
 
     virtual QString name() const override;
 

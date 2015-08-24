@@ -79,7 +79,9 @@ ExtractVariableRefactoring::ExtractVariableRefactoring(const clang::Expr *expr,
             Replacement pattern(*sourceManager, nodeInCpndStmt->getLocStart(), 0, "");
             m_filenameVariablePlacement = pattern.getFilePath();
             m_offsetVariablePlacement = pattern.getOffset();
-            m_variableType = expr->getType().getAsString(); // qualification may be necessary
+            PrintingPolicy policy(astContext->getLangOpts());
+            policy.SuppressUnwrittenScope = true;
+            m_variableType = expr->getType().getAsString(policy);
         }
     }
 }
@@ -126,8 +128,7 @@ struct is_error_code_enum<Error> : public true_type
 };
 }
 
-llvm::ErrorOr<Replacements> ExtractVariableRefactoring::invoke(
-    RefactoringContext *ctx)
+Refactoring::ResultType ExtractVariableRefactoring::invoke(RefactoringContext *ctx)
 {
     // This is local refactoring, all context dependent operations done in RefactoringManager
     Q_UNUSED(ctx);

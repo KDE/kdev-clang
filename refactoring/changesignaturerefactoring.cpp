@@ -85,8 +85,7 @@ ChangeSignatureRefactoring::ChangeSignatureRefactoring(const FunctionDecl *funct
 
 ChangeSignatureRefactoring::~ChangeSignatureRefactoring() = default;
 
-llvm::ErrorOr<clang::tooling::Replacements> ChangeSignatureRefactoring::invoke(
-    RefactoringContext *ctx)
+Refactoring::ResultType ChangeSignatureRefactoring::invoke(RefactoringContext *ctx)
 {
     std::unique_ptr<ChangeSignatureDialog> dialog(
         new ChangeSignatureDialog(m_infoPack.get(), nullptr));

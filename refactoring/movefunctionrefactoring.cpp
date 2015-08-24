@@ -79,6 +79,7 @@ namespace
 enum class Error
 {
     NonStatic,
+    NoTargetRecordFound,
 };
 
 class NonStaticErrorCategory : public std::error_category
@@ -100,13 +101,34 @@ string NonStaticErrorCategory::message(int) const noexcept
             " Use \"make static\" refactoring.").toStdString();
 }
 
+class NoTargetRecordFoundErrorCategory : public std::error_category
+{
+public:
+    virtual const char *name() const noexcept override;
+    virtual string message(int) const noexcept override;
+};
+
+const char *NoTargetRecordFoundErrorCategory::name() const noexcept
+{
+    return "NoTargetRecordFoundErrorCategory";
+}
+
+string NoTargetRecordFoundErrorCategory::message(int) const noexcept
+{
+    return i18n("Unable to locate target record").toStdString();
+    // And also unable to provide more information here - error_category is stateless
+}
+
 static const NonStaticErrorCategory nonStaticErrorCategory{};
+static const NoTargetRecordFoundErrorCategory noTargetRecordFoundErrorCategory{};
 
 std::error_code make_error_code(Error error)
 {
     switch (error) {
     case Error::NonStatic:
         return error_code(0, nonStaticErrorCategory);
+    case Error::NoTargetRecordFound:
+        return error_code(0, noTargetRecordFoundErrorCategory);
     default:
         Q_ASSERT_X(false, "make_error_code(Error)", "Non exhaustive match");
     }
@@ -124,7 +146,7 @@ struct is_error_code_enum<Error> : public true_type
 
 }
 
-llvm::ErrorOr<clang::tooling::Replacements> MoveFunctionRefactoring::invoke(RefactoringContext *ctx)
+Refactoring::ResultType MoveFunctionRefactoring::invoke(RefactoringContext *ctx)
 {
     if (!m_isStatic) {
         return Error::NonStatic;
@@ -139,7 +161,7 @@ llvm::ErrorOr<clang::tooling::Replacements> MoveFunctionRefactoring::invoke(Refa
     if (targetRecordName.isEmpty()) {
         return cancelledResult();
     }
-    return ctx->scheduleRefactoring(
+    return ctx->scheduleRefactoringWithError(
         [this, targetRecordName](RefactoringTool &tool)
         {
             return doRefactoring(tool, targetRecordName.toStdString());
@@ -161,6 +183,11 @@ public:
 
     virtual void run(const MatchFinder::MatchResult &result) override;
 
+    bool foundTargetRecord() const
+    {
+        return m_foundTargetRecord;
+    }
+
 private:
     void handleMethodDecl(const CXXMethodDecl *methodDecl, SourceManager *sourceManager,
                           ASTContext *astContext);
@@ -178,10 +205,11 @@ private:
     TUDeclDispatcher &m_declDispatcher;
     TUDeclDispatcher &m_targetRecordDispatcher;
     bool m_declarationIsADefinition;
+    bool m_foundTargetRecord = false;
 };
 
-Replacements MoveFunctionRefactoring::doRefactoring(RefactoringTool &tool,
-                                                    const string &targetRecord)
+Refactoring::ResultType MoveFunctionRefactoring::doRefactoring(RefactoringTool &tool,
+                                                               const string &targetRecord)
 {
     auto methodDeclMatcher = methodDecl().bind("CXXMethodDecl");
     auto targetRecordDeclMatcher = recordDecl().bind("RecordDecl");
@@ -199,7 +227,11 @@ Replacements MoveFunctionRefactoring::doRefactoring(RefactoringTool &tool,
     finder.addMatcher(declRefExprMatcher, &callback);
     finder.addMatcher(memberExprMatcher, &callback);
     tool.run(newFrontendActionFactory(&finder).get());
-    return replacements;
+    if (callback.foundTargetRecord()) {
+        return replacements;
+    } else {
+        return Error::NoTargetRecordFound;
+    }
 }
 
 TargetRecordComparator::TargetRecordComparator(const string &recordName)
@@ -390,6 +422,7 @@ void MoveFunctionRefactoring::Callback::handleTargetRecordDecl(const RecordDecl 
     }
     code += "\n";
     m_replacements.insert(Replacement(*sourceManager, targetRecordDecl->getRBraceLoc(), 0, code));
+    m_foundTargetRecord = true;
 }
 
 void MoveFunctionRefactoring::Callback::handleDeclRefExpr(const DeclRefExpr *declRefExpr,

@@ -51,13 +51,9 @@ class Refactoring : public QObject, public RefactoringInfo
     Q_OBJECT;
     Q_DISABLE_COPY(Refactoring);
 
-    /**
-     * @c scheduleRefactoring uses busy dialog and @c uiLockerCallback
-     */
-    friend clang::tooling::Replacements RefactoringContext::scheduleRefactoring(
-        std::function<clang::tooling::Replacements(clang::tooling::RefactoringTool &)>);
-
 public:
+    using ResultType = llvm::ErrorOr<clang::tooling::Replacements>;
+
     Refactoring(QObject *parent);
 
     /**
@@ -68,7 +64,7 @@ public:
      * @c RefactoringContext). When finished it shall return @c clang::tooling::Replacements
      * (on success) or @c std::error_code (on failure).
      */
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) = 0;
+    virtual ResultType invoke(RefactoringContext *ctx) = 0;
 
 protected:
     /**
@@ -78,7 +74,7 @@ protected:
      *
      * @note Current implementation does not mark and return empty @c clang::tooling::Replacements
      */
-    static llvm::ErrorOr<clang::tooling::Replacements> cancelledResult();
+    static ResultType cancelledResult();
 
     /* TODO: interruptedResult - it is desirable to support interruption of refactoring operation.
      * (implementation of interruption mechanism is not trivial task!)
@@ -95,8 +91,13 @@ protected:
      * dialog ("locking ui") and storing result of refactoring action in given
      * @c clang::tooling::Replacements object.
      */
-    static std::function<void(clang::tooling::Replacements)> uiLockerCallback(
-        QDialog *uiLocker, clang::tooling::Replacements &result);
+    static std::function<void(ResultType)> uiLockerCallback(QDialog *uiLocker, ResultType &result);
+
+    /**
+     * @c scheduleRefactoringWithError uses busy dialog and @c uiLockerCallback
+     */
+    friend ResultType RefactoringContext::scheduleRefactoringWithError(
+        std::function<ResultType(clang::tooling::RefactoringTool &)>);
 };
 
 

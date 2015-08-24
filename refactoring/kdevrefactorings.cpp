@@ -46,7 +46,9 @@ ClangSupport *KDevRefactorings::parent()
 void KDevRefactorings::fillContextMenu(ContextMenuExtension &extension, Context *context)
 {
     if (EditorContext *ctx = dynamic_cast<EditorContext *>(context)) {
-        m_refactoringManager->fillContextMenu(extension, ctx);
+        if (m_refactoringsContext->isInitialized()) {
+            m_refactoringManager->fillContextMenu(extension, ctx);
+        }
     } else {
         // I assume the above works anytime we ask for context menu for code
         Q_ASSERT(!context->hasType(Context::CodeContext));

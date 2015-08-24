@@ -39,7 +39,7 @@ public:
     ExtractVariableRefactoring(const clang::Expr *expr, clang::ASTContext *astContext,
                                clang::SourceManager *sourceManager);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+    virtual ResultType invoke(RefactoringContext *ctx) override;
     virtual QString name() const override;
 
     /**

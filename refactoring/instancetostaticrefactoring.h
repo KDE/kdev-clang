@@ -47,7 +47,7 @@ class InstanceToStaticRefactoring : public Refactoring
 public:
     explicit InstanceToStaticRefactoring(const clang::CXXMethodDecl *decl);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx);
+    virtual ResultType invoke(RefactoringContext *ctx);
     virtual QString name() const;
 
     /**

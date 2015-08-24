@@ -94,8 +94,7 @@ EncapsulateFieldRefactoring::EncapsulateFieldRefactoring(const DeclaratorDecl *d
 
 EncapsulateFieldRefactoring::~EncapsulateFieldRefactoring() = default;
 
-llvm::ErrorOr<clang::tooling::Replacements> EncapsulateFieldRefactoring::invoke(
-    RefactoringContext *ctx)
+Refactoring::ResultType EncapsulateFieldRefactoring::invoke(RefactoringContext *ctx)
 {
     unique_ptr<EncapsulateFieldDialog> dialog(new EncapsulateFieldDialog(m_changePack.get()));
     if (dialog->exec() == 0) {

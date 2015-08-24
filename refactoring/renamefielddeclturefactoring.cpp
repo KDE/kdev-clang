@@ -85,8 +85,7 @@ RenameFieldDeclTURefactoring::RenameFieldDeclTURefactoring(const std::string &fi
 {
 }
 
-llvm::ErrorOr<clang::tooling::Replacements> RenameFieldDeclTURefactoring::invoke(
-    RefactoringContext *ctx)
+Refactoring::ResultType RenameFieldDeclTURefactoring::invoke(RefactoringContext *ctx)
 {
     const QString oldName = QString::fromStdString(m_oldFieldDeclName);
     const QString newName = QInputDialog::getText(nullptr, i18n("Rename field"),

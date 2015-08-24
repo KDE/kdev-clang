@@ -74,8 +74,7 @@ InstanceToStaticRefactoring::InstanceToStaticRefactoring(const CXXMethodDecl *de
     }
 }
 
-llvm::ErrorOr<clang::tooling::Replacements> InstanceToStaticRefactoring::invoke(
-    RefactoringContext *ctx)
+Refactoring::ResultType InstanceToStaticRefactoring::invoke(RefactoringContext *ctx)
 {
     QString nameForThisPtr;
     if (m_usesThisPtr) {

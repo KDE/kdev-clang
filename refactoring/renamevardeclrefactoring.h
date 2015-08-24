@@ -46,7 +46,7 @@ public:
     RenameVarDeclRefactoring(std::unique_ptr<DeclarationComparator> declComparator,
                              const std::string &declName, QObject *parent = nullptr);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+    virtual ResultType invoke(RefactoringContext *ctx) override;
 
     virtual QString name() const override;
 

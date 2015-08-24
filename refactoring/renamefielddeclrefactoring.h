@@ -36,7 +36,7 @@ class RenameFieldDeclRefactoring : public Refactoring
 public:
     RenameFieldDeclRefactoring(const std::string &oldName, std::string oldQualName);
 
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx) override;
+    virtual ResultType invoke(RefactoringContext *ctx) override;
 
     virtual QString name() const override;
 private:

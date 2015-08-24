@@ -75,6 +75,13 @@ public:
     KDevRefactorings *parent();
 
     /**
+     * Is compilation database ready tu use (and thus cache initialized)
+     *
+     * @todo It is workaround for missing ComposedCompilationDatabase
+     */
+    bool isInitialized() const;
+
+    /**
      * Translates KDevelop style cursor position (in given file!) to offset (Clang style cursor
      * position).
      * @note It works on file (whether on-disk or cached) and thus may fail.
@@ -123,6 +130,15 @@ public:
      */
     clang::tooling::Replacements scheduleRefactoring(
         std::function<clang::tooling::Replacements(clang::tooling::RefactoringTool &)> task);
+
+    /**
+     * Convenience method on top of @c schedule. Schedules @p task to be done in background,
+     * displays modal dialog blocking (but not frezing) GUI. Returns result of @p task or error.
+     * @note It is designed to be used by implementation of refactorings.
+     */
+    llvm::ErrorOr<clang::tooling::Replacements> scheduleRefactoringWithError(
+        std::function<llvm::ErrorOr<clang::tooling::Replacements>(
+            clang::tooling::RefactoringTool &)> task);
 
 private: // (slots)
     // Only one project for now

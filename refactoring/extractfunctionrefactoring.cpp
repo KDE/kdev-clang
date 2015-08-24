@@ -163,8 +163,7 @@ ExtractFunctionRefactoring *ExtractFunctionRefactoring::create(const clang::Expr
     }
 }
 
-llvm::ErrorOr<clang::tooling::Replacements> ExtractFunctionRefactoring::invoke(
-    RefactoringContext *ctx)
+Refactoring::ResultType ExtractFunctionRefactoring::invoke(RefactoringContext *ctx)
 {
     // This is local refactoring, all context dependent operations done in RefactoringManager
     Q_UNUSED(ctx);

@@ -80,7 +80,7 @@ RenameVarDeclRefactoring::RenameVarDeclRefactoring(unique_ptr<DeclarationCompara
 {
 }
 
-llvm::ErrorOr<Replacements> RenameVarDeclRefactoring::invoke(
+Refactoring::ResultType RenameVarDeclRefactoring::invoke(
     RefactoringContext *ctx)
 {
     const QString oldName = QString::fromStdString(m_oldVarDeclName);

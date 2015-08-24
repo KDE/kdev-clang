@@ -40,7 +40,7 @@ class ExtractFunctionRefactoring : public Refactoring
     struct Task;
 
 public:
-    virtual llvm::ErrorOr<clang::tooling::Replacements> invoke(RefactoringContext *ctx);
+    virtual ResultType invoke(RefactoringContext *ctx);
     virtual QString name() const;
 
     clang::tooling::Replacements doRefactoring(const std::string &name);

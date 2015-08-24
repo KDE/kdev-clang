@@ -68,6 +68,11 @@ KDevRefactorings *RefactoringContext::parent()
     return static_cast<KDevRefactorings *>(QObject::parent());
 }
 
+bool RefactoringContext::isInitialized() const
+{
+    return static_cast<bool>(database);
+}
+
 llvm::ErrorOr<unsigned> RefactoringContext::offset(const std::string &sourceFile,
                                                    const KTextEditor::Cursor &position) const
 {
@@ -131,8 +136,19 @@ void RefactoringContext::projectConfigured(IProject *project)
 Replacements RefactoringContext::scheduleRefactoring(
     std::function<Replacements(RefactoringTool &)> task)
 {
+    auto newTask = [task](RefactoringTool &tool) -> llvm::ErrorOr<Replacements>
+    {
+        return task(tool);
+    };
+    auto result = scheduleRefactoringWithError(newTask);
+    return result.get();
+}
+
+llvm::ErrorOr<Replacements> RefactoringContext::scheduleRefactoringWithError(
+    std::function<llvm::ErrorOr<Replacements>(RefactoringTool &)> task)
+{
     QDialog *uiLocker = Refactoring::newBusyDialog();
-    Replacements result;
+    llvm::ErrorOr<Replacements> result = Replacements{};
     schedule(task, Refactoring::uiLockerCallback(uiLocker, result));
     uiLocker->exec();
     return result;
