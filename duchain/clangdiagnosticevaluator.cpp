@@ -34,7 +34,7 @@ namespace
  *
  * @return True if this may be fixable by adding a include, false otherwise
  */
-bool isDeclarationProblem(CXDiagnostic diagnostic)
+bool isDeclarationProblem(const QByteArray& description)
 {
     /* libclang does not currently expose an enum or any other way to query
      * what specific semantic error we're dealing with. Instead, we have to
@@ -49,29 +49,78 @@ bool isDeclarationProblem(CXDiagnostic diagnostic)
      * http://lists.cs.uiuc.edu/pipermail/cfe-dev/2014-March/036036.html
      */
 
-    QString description = ClangString(clang_getDiagnosticSpelling(diagnostic)).toString();
-    return description.startsWith( QLatin1String("use of undeclared identifier") )
-           || description.startsWith( QLatin1String("no member named") )
-           || description.startsWith( QLatin1String("unknown type name") )
-           || description.startsWith( QLatin1String("variable has incomplete type") );
+    return description.startsWith( QByteArrayLiteral("use of undeclared identifier") )
+           || description.startsWith( QByteArrayLiteral("no member named") )
+           || description.startsWith( QByteArrayLiteral("unknown type name") )
+           || description.startsWith( QByteArrayLiteral("variable has incomplete type") );
 }
 
 /// @return true if @p diagnostic says that include file not found
-bool isIncludeFileNotFound(CXDiagnostic diagnostic)
+bool isIncludeFileNotFound(const QByteArray& description)
 {
-    return ClangString(clang_getDiagnosticSpelling(diagnostic)).toString().endsWith(QLatin1String("file not found"));
+    return description.endsWith(QByteArrayLiteral("file not found"));
 }
 
+bool isReplaceWithDotProblem(const QByteArray& description)
+{
+    // TODO: The diagnostic message depends on LibClang version.
+    const QList<QByteArray> diagnosticMessages {QByteArrayLiteral("did you mean to use '.'?"), QByteArrayLiteral("maybe you meant to use '.'?")};
+
+    for (const auto& diagnStr : diagnosticMessages) {
+        if (description.endsWith(diagnStr)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool isReplaceWithArrowProblem(const QByteArray& description)
+{
+    // TODO: The diagnostic message depends on LibClang version.
+    const QList<QByteArray> diagnosticMessages {QByteArrayLiteral("did you mean to use '->'?"), QByteArrayLiteral("maybe you meant to use '->'?")};
+
+    for (const auto& diagnStr : diagnosticMessages) {
+        if (description.endsWith(diagnStr)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+}
+
+ClangDiagnosticEvaluator::DiagnosticType ClangDiagnosticEvaluator::diagnosticType(CXDiagnostic diagnostic)
+{
+    const ClangString str(clang_getDiagnosticSpelling(diagnostic));
+    const auto description = QByteArray::fromRawData(str.c_str(), qstrlen(str.c_str()));
+
+    if (isDeclarationProblem(description)) {
+        return UnknownDeclarationProblem;
+    } else if (isIncludeFileNotFound(description)) {
+        return IncludeFileNotFoundProblem;
+    } else if (isReplaceWithDotProblem(description)) {
+        return ReplaceWithDotProblem;
+    } else if (isReplaceWithArrowProblem(description)) {
+        return ReplaceWithArrowProblem;
+    }
+
+    return Unknown;
 }
 
 ClangProblem* ClangDiagnosticEvaluator::createProblem(CXDiagnostic diagnostic, CXTranslationUnit unit)
 {
-    if (isDeclarationProblem(diagnostic)) {
-        return new UnknownDeclarationProblem(diagnostic, unit);
-    } else if(isIncludeFileNotFound(diagnostic)){
+    switch (diagnosticType(diagnostic)) {
+    case IncludeFileNotFoundProblem:
         return new MissingIncludePathProblem(diagnostic, unit);
+        break;
+    case UnknownDeclarationProblem:
+        return new class UnknownDeclarationProblem(diagnostic, unit);
+        break;
+    default:
+        return new ClangProblem(diagnostic, unit);
+        break;
     }
-
-    return new ClangProblem(diagnostic, unit);
 }
 

@@ -326,6 +326,12 @@ struct Visitor
     {
         auto range = ClangHelpers::cursorSpellingNameRange(cursor, id);
 
+        if (CK == CXCursor_ParmDecl && id.isEmpty()) {
+            // This is an anonymous function parameter e.g.: void f(int);
+            // Set empty range for it
+            range.end = range.start;
+        }
+
         // check if cursor is inside a macro expansion
         auto clangRange = clang_Cursor_getSpellingNameRange(cursor, 0, 0);
         unsigned int expansionLocOffset;
@@ -487,6 +493,10 @@ struct Visitor
             decl = ClangHelpers::findForwardDeclaration(type, m_parentContext->context, parent);
         }
 
+        if (clang_Type_getNumTemplateArguments(type) != -1) {
+            return createClassTemplateSpecializationType(type, decl);
+        }
+
         auto t = new StructureType;
         t->setDeclaration(decl.data());
         return t;
@@ -594,7 +604,8 @@ struct Visitor
         return makeType(clangType, cursor);
     }
 
-    AbstractType* createClassTemplateSpecializationType(CXType type)
+    /// @param declaration an optional declaration that will be associated with created type
+    AbstractType* createClassTemplateSpecializationType(CXType type, const DeclarationPointer declaration = {})
     {
         auto numTA = clang_Type_getNumTemplateArguments(type);
         Q_ASSERT(numTA != -1);
@@ -623,12 +634,7 @@ struct Visitor
                     currentType = t;
                 }
             } else {
-                if (clang_Type_getNumTemplateArguments(argumentType) != -1) {
-                    // E.g. type< type<int> >. Use a delayed type for now.
-                    currentType = createDelayedType(argumentType);
-                } else {
-                    currentType = makeType(argumentType, typeDecl);
-                }
+                currentType = makeType(argumentType, typeDecl);
             }
 
             if (currentType) {
@@ -636,7 +642,7 @@ struct Visitor
             }
         }
 
-        auto decl = findDeclaration(typeDecl);
+        auto decl = declaration ? declaration : findDeclaration(typeDecl);
 
         DUChainReadLocker lock;
         cst->setDeclaration(decl.data());
@@ -1028,12 +1034,6 @@ CXChildVisitResult Visitor::buildDeclaration(CXCursor cursor)
 
 CXChildVisitResult Visitor::buildParmDecl(CXCursor cursor)
 {
-    // There is no need to create declarations for anonymous function parameters e.g.: void f(int);
-    // Currently clang_Cursor_getSpellingNameRange returns not empty ranges for anonymous parameters. So we use clang_getCursorSpelling here.
-    if (ClangString(clang_getCursorSpelling(cursor)).isEmpty()) {
-        return CXChildVisit_Recurse;
-    }
-
     return buildDeclaration<CXCursor_ParmDecl, typename DeclType<CXCursor_ParmDecl, false, false>::Type, false>(cursor);
 }
 
