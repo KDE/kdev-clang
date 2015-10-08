@@ -151,11 +151,6 @@ ClangParsingEnvironmentFile* parsingEnvironmentFile(const TopDUContext* context)
     return dynamic_cast<ClangParsingEnvironmentFile*>(context->parsingEnvironmentFile().data());
 }
 
-bool hasTracker(const IndexedString& url)
-{
-    return ICore::self()->languageController()->backgroundParser()->trackerForUrl(url);
-}
-
 }
 
 ClangParseJob::ClangParseJob(const IndexedString& url, ILanguageSupport* languageSupport)
@@ -319,18 +314,23 @@ void ClangParseJob::run(ThreadWeaver::JobPointer /*self*/, ThreadWeaver::Thread 
         if (!context) {
             continue;
         }
+        const auto url = context->url();
+        auto tracker = ICore::self()->languageController()->backgroundParser()->trackerForUrl(url);
         {
             // prefer the editor modification revision, instead of the on-disk revision
-            auto it = m_unsavedRevisions.find(context->url());
+            auto it = m_unsavedRevisions.find(url);
             if (it != m_unsavedRevisions.end()) {
                 DUChainWriteLocker lock;
                 auto file = parsingEnvironmentFile(context);
                 Q_ASSERT(file);
                 file->setModificationRevision(it.value());
+                if (tracker) {
+                    tracker->acquireRevision(it.value().revision);
+                }
             }
         }
-        if (::hasTracker(context->url())) {
-            if (clang()->index()->translationUnitForUrl(context->url()) == m_environment.translationUnitUrl()) {
+        if (tracker) {
+            if (clang()->index()->translationUnitForUrl(url) == m_environment.translationUnitUrl()) {
                 // cache the parse session and the contained translation unit for this chain
                 // this then allows us to quickly reparse the document if it is changed by
                 // the user
