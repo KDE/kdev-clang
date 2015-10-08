@@ -52,6 +52,7 @@
 #include "duchain/clangparsingenvironmentfile.h"
 #include "util/clangdebug.h"
 #include "util/clangtypes.h"
+#include "util/foregroundlock.h"
 
 #include "clangsupport.h"
 #include "documentfinderhelpers.h"
@@ -320,11 +321,15 @@ void ClangParseJob::run(ThreadWeaver::JobPointer /*self*/, ThreadWeaver::Thread 
             // prefer the editor modification revision, instead of the on-disk revision
             auto it = m_unsavedRevisions.find(url);
             if (it != m_unsavedRevisions.end()) {
-                DUChainWriteLocker lock;
-                auto file = parsingEnvironmentFile(context);
-                Q_ASSERT(file);
-                file->setModificationRevision(it.value());
+                {
+                    DUChainWriteLocker lock;
+                    auto file = parsingEnvironmentFile(context);
+                    Q_ASSERT(file);
+                    file->setModificationRevision(it.value());
+                }
                 if (tracker) {
+                    ForegroundLock lock;
+                    tracker->reset();
                     tracker->acquireRevision(it.value().revision);
                 }
             }
